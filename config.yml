@@ -1,0 +1,8 @@
+pleiades-core:
+  http-method: https
+  host: mecrm.dolylab.cc
+  version: v0.5
+
+worker:
+  runtimes:
+  - js+gpu

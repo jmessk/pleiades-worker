@@ -1,0 +1,11 @@
+[workspace.package]
+name = "pleiades-worker"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = ["contractor", "runtime", "scheduler"]
+
+[workspace.dependencies]
+pleiades-api = { git = "https://git.dolylab.cc/mec/pleiades-rs.git" }
+tokio = { version = "1.0", features = ["full"] }

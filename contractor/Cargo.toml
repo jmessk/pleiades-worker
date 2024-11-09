@@ -1,0 +1,8 @@
+[package]
+name = "contractor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pleiades-api = { workspace = true }
+tokio = { workspace = true }
