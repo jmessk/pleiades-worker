@@ -1121,7 +1121,7 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 [[package]]
 name = "pleiades-api"
 version = "0.1.0"
-source = "git+https://git.dolylab.cc/mec/pleiades-rs.git#a2eb8aec331e4cb0c13c836c9c3c766eaa7ff497"
+source = "git+https://git.dolylab.cc/mec/pleiades-rs.git?branch=dev#b989188e2a580994ee48d84c0be62cffb495c911"
 dependencies = [
  "anyhow",
  "bytes",

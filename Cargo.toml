@@ -6,5 +6,5 @@ edition = "2021"
 [dependencies]
 boa_engine = "0.19"
 bytes = "1.8"
-pleiades-api = { git = "https://git.dolylab.cc/mec/pleiades-rs.git" }
+pleiades-api = { git = "https://git.dolylab.cc/mec/pleiades-rs.git", branch = "dev"}
 tokio = { version = "1.0", features = ["full"] }

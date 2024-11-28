@@ -4,11 +4,17 @@ use boa_engine::{Context, JsArgs, JsResult, JsValue, NativeFunction, Source};
 use std::sync::mpsc;
 
 #[derive(Default)]
-pub struct Runtime {
+pub struct JsRuntime {
     context: Context,
 }
 
-impl Runtime {
+impl JsRuntime {
+    pub fn new() -> Self {
+        Self {
+            context: Context::default(),
+        }
+    }
+
     pub fn run(&mut self, job_context: Job) -> JsResult<()> {
         let result = self
             .context
@@ -19,8 +25,14 @@ impl Runtime {
     }
 }
 
+
+
+
+
+
+
 pub struct RuntimeInterface {
-    runtime: Runtime,
+    runtime: JsRuntime,
     job_sender: mpsc::Sender<Job>,
     job_receiver: mpsc::Receiver<Job>,
 }
@@ -30,7 +42,7 @@ impl Default for RuntimeInterface {
         let (job_sender, job_receiver) = mpsc::channel();
 
         Self {
-            runtime: Runtime::default(),
+            runtime: JsRuntime::default(),
             job_sender,
             job_receiver,
         }
@@ -50,6 +62,14 @@ impl RuntimeInterface {
     }
 }
 
+
+
+
+
+
+
+
+
 #[cfg(test)]
 mod tests {
     use crate::types::Lambda;
@@ -58,7 +78,7 @@ mod tests {
 
     #[test]
     fn test_runtime_run() {
-        let mut runtime = Runtime::default();
+        let mut runtime = JsRuntime::default();
         let job = Job {
             id: "1".to_string(),
             lambda: Lambda {
