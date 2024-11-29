@@ -1,12 +1,17 @@
+use bytes::Bytes;
 
-
-pub struct Lambda {
+pub struct BlobMetadata{
     pub id: String,
-    pub code: String,
+    pub data: Bytes,
 }
 
-pub struct Job {
+pub struct LambdaMetadata {
     pub id: String,
-    pub lambda: Lambda,
+    pub code: BlobMetadata,
+}
+
+pub struct JobMetadata {
+    pub id: String,
+    pub lambda_id: String,
     pub input_id: String,
 }

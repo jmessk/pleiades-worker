@@ -1,4 +1,4 @@
-use crate::types::Job;
+use crate::types::JobMetadata;
 
 use boa_engine::{Context, JsArgs, JsResult, JsValue, NativeFunction, Source};
 use std::sync::mpsc;
@@ -15,7 +15,7 @@ impl JsRuntime {
         }
     }
 
-    pub fn run(&mut self, job_context: Job) -> JsResult<()> {
+    pub fn run(&mut self, job_context: JobMetadata) -> JsResult<()> {
         let result = self
             .context
             .eval(Source::from_bytes(&job_context.lambda.code))?;
@@ -33,8 +33,8 @@ impl JsRuntime {
 
 pub struct RuntimeInterface {
     runtime: JsRuntime,
-    job_sender: mpsc::Sender<Job>,
-    job_receiver: mpsc::Receiver<Job>,
+    job_sender: mpsc::Sender<JobMetadata>,
+    job_receiver: mpsc::Receiver<JobMetadata>,
 }
 
 impl Default for RuntimeInterface {
@@ -50,7 +50,7 @@ impl Default for RuntimeInterface {
 }
 
 impl RuntimeInterface {
-    pub fn sender(&self) -> mpsc::Sender<Job> {
+    pub fn sender(&self) -> mpsc::Sender<JobMetadata> {
         self.job_sender.clone()
     }
 
@@ -72,16 +72,16 @@ impl RuntimeInterface {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::Lambda;
+    use crate::types::LambdaMetadata;
 
     use super::*;
 
     #[test]
     fn test_runtime_run() {
         let mut runtime = JsRuntime::default();
-        let job = Job {
+        let job = JobMetadata {
             id: "1".to_string(),
-            lambda: Lambda {
+            lambda: LambdaMetadata {
                 id: "1".to_string(),
                 code: "console.log('Hello, World!');".to_string(),
             },
