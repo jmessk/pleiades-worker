@@ -1,5 +1,5 @@
 use std::sync::{atomic::AtomicU32, Arc};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::types::JobMetadata;
 
@@ -160,7 +160,7 @@ impl Api {
     /// receive
     ///
     pub async fn receive(&mut self) -> Result<Option<JobMetadata>, String> {
-        self.response_receiver.recv()
+        self.response_receiver.recv().await.unwrap()
     }
 
     ///
@@ -170,4 +170,13 @@ impl Api {
         self.num_contracting
             .load(std::sync::atomic::Ordering::Relaxed)
     }
+}
+
+pub struct Request {
+    runtime: String,
+    response_sender: oneshot::Sender<Option<JobMetadata>>,
+}
+
+pub struct Handler {
+    response_receiver: oneshot::Receiver<Option<JobMetadata>>
 }
