@@ -79,7 +79,7 @@ impl Fetcher {
             .send(get_blob::Response {
                 blob: download_response.data,
             })
-            .expect("contractor cannot send job metadata");
+            .expect("fetcher");
     }
 
     /// task
@@ -93,12 +93,9 @@ impl Fetcher {
 
         let upload_response = upload_response.expect("no error handling: upload blob");
 
-        request
-            .response_sender
-            .send(post_blob::Response {
-                blob_id: upload_response.data_id,
-            })
-            .expect("contractor cannot send job metadata");
+        request.response_sender.send(post_blob::Response {
+            blob_id: upload_response.data_id,
+        }).expect("fetcher");
     }
 
     /// wait_for_shutdown

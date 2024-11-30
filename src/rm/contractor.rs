@@ -87,7 +87,7 @@ impl Contractor {
         let job_id = match maybe_job.job_id {
             Some(job_id) => job_id,
             None => {
-                request.response_sender.send(Response { contracted: None });
+                request.response_sender.send(Response { contracted: None }).expect("contractor");
                 return;
             }
         };
@@ -123,7 +123,7 @@ impl Contractor {
             .send(Response {
                 contracted: Some(job_metadata),
             })
-            .expect("contractor cannot send job metadata");
+            .expect("contractor");
     }
 
     /// wait_for_shutdown
@@ -182,7 +182,7 @@ pub struct Request {
 
 #[derive(Debug)]
 pub struct Response {
-    contracted: Option<JobMetadata>,
+    pub contracted: Option<JobMetadata>,
 }
 
 pub struct Handler {
