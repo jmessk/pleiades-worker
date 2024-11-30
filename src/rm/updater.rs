@@ -110,7 +110,7 @@ pub struct Api {
 impl Api {
     /// get_blob
     ///
-    pub async fn finish_job(&self, job_id: String, output_id: String) -> finish::Handler {
+    pub async fn finish_job(&self, job_id: String, output_id: String) -> finish::Handle {
         let (response_sender, response_receiver) = oneshot::channel();
 
         let request = Command::FinishJob(finish::Request {
@@ -121,7 +121,7 @@ impl Api {
 
         self.request_sender.send(request).await.unwrap();
 
-        finish::Handler { response_receiver }
+        finish::Handle { response_receiver }
     }
 }
 
@@ -142,11 +142,11 @@ pub mod finish {
     #[derive(Debug)]
     pub struct Response {}
 
-    pub struct Handler {
+    pub struct Handle {
         pub response_receiver: oneshot::Receiver<Response>,
     }
 
-    impl Handler {
+    impl Handle {
         pub async fn recv_nowait(&mut self) -> Option<Response> {
             self.response_receiver.try_recv().ok()
         }

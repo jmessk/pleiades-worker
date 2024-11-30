@@ -51,8 +51,8 @@ impl Fetcher {
                 task_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                 match request {
-                    Command::GetBlob(request) => Self::task_get_blob(client, request).await,
-                    Command::PostBlob(request) => Self::task_post_blob(client, request).await,
+                    Command::DownloadBlob(request) => Self::task_download_blob(client, request).await,
+                    Command::UploadBlob(request) => Self::task_upload_blob(client, request).await,
                 }
 
                 task_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
@@ -64,7 +64,7 @@ impl Fetcher {
 
     /// task
     ///
-    async fn task_get_blob(client: Arc<pleiades_api::Client>, request: get_blob::Request) {
+    async fn task_download_blob(client: Arc<pleiades_api::Client>, request: download_blob::Request) {
         let download_request = pleiades_api::api::data::download::Request::builder()
             .data_id(request.blob_id)
             .build();
@@ -76,15 +76,15 @@ impl Fetcher {
 
         request
             .response_sender
-            .send(get_blob::Response {
-                blob: download_response.data,
+            .send(download_blob::Response {
+                data: download_response.data,
             })
             .expect("fetcher");
     }
 
     /// task
     ///
-    async fn task_post_blob(client: Arc<pleiades_api::Client>, request: post_blob::Request) {
+    async fn task_upload_blob(client: Arc<pleiades_api::Client>, request: upload_blob::Request) {
         let upload_request = pleiades_api::api::data::upload::Request::builder()
             .data(request.data)
             .build();
@@ -93,9 +93,12 @@ impl Fetcher {
 
         let upload_response = upload_response.expect("no error handling: upload blob");
 
-        request.response_sender.send(post_blob::Response {
-            blob_id: upload_response.data_id,
-        }).expect("fetcher");
+        request
+            .response_sender
+            .send(upload_blob::Response {
+                blob_id: upload_response.data_id,
+            })
+            .expect("fetcher");
     }
 
     /// wait_for_shutdown
@@ -117,6 +120,7 @@ impl Fetcher {
 ///
 ///
 ///
+#[derive(Clone)]
 pub struct Api {
     request_sender: mpsc::Sender<Command>,
 }
@@ -124,38 +128,38 @@ pub struct Api {
 impl Api {
     /// get_blob
     ///
-    pub async fn get_blob(&self, blob_id: String) -> get_blob::Handler {
+    pub async fn download_blob(&self, blob_id: String) -> download_blob::Handle {
         let (response_sender, response_receiver) = oneshot::channel();
 
-        let request = Command::GetBlob(get_blob::Request {
+        let request = Command::DownloadBlob(download_blob::Request {
             response_sender,
             blob_id,
         });
 
         self.request_sender.send(request).await.unwrap();
 
-        get_blob::Handler { response_receiver }
+        download_blob::Handle { response_receiver }
     }
 
     /// post_blob
     ///
-    pub async fn post_blob(&self, data: Bytes) -> post_blob::Handler {
+    pub async fn upload_blob(&self, data: Bytes) -> upload_blob::Handle {
         let (response_sender, response_receiver) = oneshot::channel();
 
-        let request = Command::PostBlob(post_blob::Request {
+        let request = Command::UploadBlob(upload_blob::Request {
             response_sender,
             data,
         });
 
         self.request_sender.send(request).await.unwrap();
 
-        post_blob::Handler { response_receiver }
+        upload_blob::Handle { response_receiver }
     }
 }
 
 pub enum Command {
-    GetBlob(get_blob::Request),
-    PostBlob(post_blob::Request),
+    DownloadBlob(download_blob::Request),
+    UploadBlob(upload_blob::Request),
 }
 
 // #[derive(Debug)]
@@ -164,7 +168,7 @@ pub enum Command {
 //     PostBlob { blob_id: String },
 // }
 
-pub mod get_blob {
+pub mod download_blob {
     use super::*;
 
     pub struct Request {
@@ -174,21 +178,25 @@ pub mod get_blob {
 
     #[derive(Debug)]
     pub struct Response {
-        pub blob: Bytes,
+        pub data: Bytes,
     }
 
-    pub struct Handler {
+    pub struct Handle {
         pub response_receiver: oneshot::Receiver<Response>,
     }
 
-    impl Handler {
+    impl Handle {
+        pub async fn recv(self) -> Response {
+            self.response_receiver.await.unwrap()
+        }
+
         pub async fn recv_nowait(&mut self) -> Option<Response> {
             self.response_receiver.try_recv().ok()
         }
     }
 }
 
-pub mod post_blob {
+pub mod upload_blob {
     use super::*;
 
     pub struct Request {
@@ -201,13 +209,44 @@ pub mod post_blob {
         pub blob_id: String,
     }
 
-    pub struct Handler {
+    pub struct Handle {
         pub response_receiver: oneshot::Receiver<Response>,
     }
 
-    impl Handler {
-        pub async fn recv_nowait(&mut self) -> Option<Response> {
+    impl Handle {
+        pub async fn recv(self) -> Response {
+            self.response_receiver.await.unwrap()
+        }
+
+        pub fn recv_nowait(&mut self) -> Option<Response> {
             self.response_receiver.try_recv().ok()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+
+    #[tokio::test]
+    async fn test_fetcher() {
+        let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
+        let mut fetcher = Fetcher::new(client);
+        let api = fetcher.api();
+
+        tokio::spawn(async move {
+            fetcher.run().await;
+        });
+
+        let data = Bytes::from("hello world");
+
+        let handle = api.upload_blob(data.clone()).await;
+        let response = handle.recv().await;
+
+        let handle = api.download_blob(response.blob_id).await;
+        let response = handle.recv().await;
+
+        assert_eq!(response.data, data);
     }
 }
