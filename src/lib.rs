@@ -4,3 +4,4 @@ pub mod rm;
 pub mod runtime;
 pub mod scheduler;
 pub mod types;
+pub mod component;

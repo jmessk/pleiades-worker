@@ -3,108 +3,95 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::types::JobMetadata;
 
-///
 /// Contractor
+///
 ///
 ///
 ///
 pub struct Contractor {
     client: Arc<pleiades_api::Client>,
-    request_receiver: mpsc::Receiver<String>,
-    response_sender: mpsc::Sender<Result<Option<JobMetadata>, String>>,
-    num_contracting: Arc<AtomicU32>,
+
+    /// interface to access this component
+    ///
+    request_sender: mpsc::Sender<Request>,
+    request_receiver: mpsc::Receiver<Request>,
+
+    /// number of jobs currently being contracted
+    ///
+    task_counter: Arc<AtomicU32>,
 }
 
 impl Contractor {
-    ///
     /// new
     ///
-    pub fn new(client: Arc<pleiades_api::Client>) -> (Self, Api) {
-        let (request_sender, request_receiver) = mpsc::channel(100);
-        let (response_sender, response_receiver) = mpsc::channel(100);
+    pub fn new(client: Arc<pleiades_api::Client>) -> Self {
+        let (request_sender, request_receiver) = mpsc::channel(64);
 
-        let contracting_counter = Arc::new(AtomicU32::new(0));
-
-        let contractor = Self {
+        Self {
             client,
-            request_receiver,
-            response_sender,
-            num_contracting: contracting_counter.clone(),
-        };
-
-        let api = Api {
             request_sender,
-            response_receiver,
-            num_contracting: contracting_counter,
-        };
-
-        (contractor, api)
-    }
-
-    ///
-    /// run
-    ///
-    pub async fn run(&mut self) {
-        while let Some(runtime) = self.request_receiver.recv().await {
-            let client = self.client.clone();
-            let response_sender = self.response_sender.clone();
-
-            self.num_contracting
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-            let contract_task = tokio::spawn(Self::contract_task(
-                client,
-                runtime,
-                response_sender,
-                self.num_contracting.clone(),
-            ));
+            request_receiver,
+            task_counter: Arc::new(AtomicU32::new(0)),
         }
     }
 
+    pub fn api(&self) -> Api {
+        Api {
+            num_contracting: self.task_counter.clone(),
+            request_sender: self.request_sender.clone(),
+        }
+    }
+
+    /// run
     ///
+    pub async fn run(&mut self) {
+        while let Some(request) = self.request_receiver.recv().await {
+            let client = self.client.clone();
+            let task_counter = self.task_counter.clone();
+
+            tokio::spawn(async move {
+                task_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Self::task(client, request).await;
+                task_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            });
+        }
+
+        self.wait_for_shutdown().await;
+    }
+
     /// contract_task
     ///
-    async fn contract_task(
-        client: Arc<pleiades_api::Client>,
-        runtime: String,
-        response_sender: mpsc::Sender<Result<Option<JobMetadata>, String>>,
-        contracting_counter: Arc<AtomicU32>,
-    ) {
-        //
+    async fn task(client: Arc<pleiades_api::Client>, request: Request) {
         // Fetch a new job
         //
         let contract_request = pleiades_api::api::worker::contract::Request::builder()
-            .worker_id(runtime)
+            .worker_id(request.runtime)
             .timeout(10)
             .build();
 
         let contract_response = client.call_api(&contract_request).await;
 
-        contracting_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-
-        let maybe_job = match contract_response {
-            Ok(response) => response,
-            Err(err) => {
-                response_sender
-                    .send(Err(err.to_string()))
-                    .await
-                    .expect("contractor cannot send response error");
-                return;
-            }
-        };
+        let maybe_job = contract_response.expect("no error handling: contract");
+        // let maybe_job = match contract_response {
+        //     Ok(response) => response,
+        //     Err(err) => {
+        //         request
+        //             .response_sender
+        //             .send(Err(err.to_string()))
+        //             .await
+        //             .expect("contractor cannot send response error");
+        //         return;
+        //     }
+        // };
 
         let job_id = match maybe_job.job_id {
             Some(job_id) => job_id,
             None => {
-                response_sender
-                    .send(Ok(None))
-                    .await
-                    .expect("contractor cannot send no job response");
+                request.response_sender.send(Response { contracted: None });
                 return;
             }
         };
 
-        //
         // Fetch job metadata
         //
         let info_request = pleiades_api::api::job::info::Request::builder()
@@ -113,16 +100,17 @@ impl Contractor {
 
         let info_response = client.call_api(&info_request).await;
 
-        let info = match info_response {
-            Ok(response) => response,
-            Err(err) => {
-                response_sender
-                    .send(Err(err.to_string()))
-                    .await
-                    .expect("contractor cannot send info");
-                return;
-            }
-        };
+        let info = info_response.expect("no error handling: job info");
+        // let info = match info_response {
+        //     Ok(response) => response,
+        //     Err(err) => {
+        //         request.response_sender
+        //             .send(Err(err.to_string()))
+        //             .await
+        //             .expect("contractor cannot send info");
+        //         return;
+        //     }
+        // };
 
         let job_metadata = JobMetadata {
             id: info.job_id,
@@ -130,40 +118,55 @@ impl Contractor {
             input_id: info.input.data_id,
         };
 
-        response_sender
-            .send(Ok(Some(job_metadata)))
-            .await
+        request
+            .response_sender
+            .send(Response {
+                contracted: Some(job_metadata),
+            })
             .expect("contractor cannot send job metadata");
+    }
+
+    /// wait_for_shutdown
+    ///
+    pub async fn wait_for_shutdown(&self) {
+        println!("Contractor is shutting down");
+
+        while self.task_counter.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+            print!(".");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+
+        println!("Contractor is shut down");
     }
 }
 
-///
 /// Api
 ///
 ///
 ///
+///
 pub struct Api {
-    request_sender: mpsc::Sender<String>,
-    response_receiver: mpsc::Receiver<Result<Option<JobMetadata>, String>>,
     num_contracting: Arc<AtomicU32>,
+    request_sender: mpsc::Sender<Request>,
 }
 
 impl Api {
-    ///
     /// contract
     ///
-    pub async fn try_contract(&self, runtime: String) {
-        self.request_sender.send(runtime).await.unwrap();
+    pub async fn try_contract(&self, runtime: String) -> Handler {
+        // self.request_sender.send(runtime).await.unwrap();
+        let (response_sender, response_receiver) = oneshot::channel();
+
+        let request = Request {
+            runtime,
+            response_sender,
+        };
+
+        self.request_sender.send(request).await.unwrap();
+
+        Handler { response_receiver }
     }
 
-    ///
-    /// receive
-    ///
-    pub async fn receive(&mut self) -> Result<Option<JobMetadata>, String> {
-        self.response_receiver.recv().await.unwrap()
-    }
-
-    ///
     /// num_contracting
     ///
     pub fn num_contracting(&self) -> u32 {
@@ -174,9 +177,20 @@ impl Api {
 
 pub struct Request {
     runtime: String,
-    response_sender: oneshot::Sender<Option<JobMetadata>>,
+    response_sender: oneshot::Sender<Response>,
+}
+
+#[derive(Debug)]
+pub struct Response {
+    contracted: Option<JobMetadata>,
 }
 
 pub struct Handler {
-    response_receiver: oneshot::Receiver<Option<JobMetadata>>
+    response_receiver: oneshot::Receiver<Response>,
+}
+
+impl Handler {
+    pub async fn recv_nowait(&mut self) -> Option<Response> {
+        self.response_receiver.try_recv().ok()
+    }
 }
