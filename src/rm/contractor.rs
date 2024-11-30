@@ -38,7 +38,7 @@ impl Contractor {
     pub fn api(&self) -> Api {
         Api {
             num_contracting: self.task_counter.clone(),
-            request_sender: self.request_sender.clone(),
+            command_sender: self.request_sender.clone(),
         }
     }
 
@@ -150,7 +150,7 @@ impl Contractor {
 ///
 pub struct Api {
     num_contracting: Arc<AtomicU32>,
-    request_sender: mpsc::Sender<Request>,
+    command_sender: mpsc::Sender<Request>,
 }
 
 impl Api {
@@ -165,7 +165,7 @@ impl Api {
             response_sender,
         };
 
-        self.request_sender.send(request).await.unwrap();
+        self.command_sender.send(request).await.unwrap();
 
         Handle { response_receiver }
     }

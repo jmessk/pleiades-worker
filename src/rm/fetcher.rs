@@ -36,7 +36,7 @@ impl Fetcher {
 
     pub fn api(&self) -> Api {
         Api {
-            request_sender: self.command_sender.clone(),
+            command_sender: self.command_sender.clone(),
         }
     }
 
@@ -122,7 +122,7 @@ impl Fetcher {
 ///
 #[derive(Clone)]
 pub struct Api {
-    request_sender: mpsc::Sender<Command>,
+    command_sender: mpsc::Sender<Command>,
 }
 
 impl Api {
@@ -136,7 +136,7 @@ impl Api {
             blob_id,
         });
 
-        self.request_sender.send(request).await.unwrap();
+        self.command_sender.send(request).await.unwrap();
 
         download_blob::Handle { response_receiver }
     }
@@ -151,7 +151,7 @@ impl Api {
             data,
         });
 
-        self.request_sender.send(request).await.unwrap();
+        self.command_sender.send(request).await.unwrap();
 
         upload_blob::Handle { response_receiver }
     }

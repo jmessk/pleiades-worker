@@ -37,7 +37,7 @@ impl Updater {
     ///
     pub fn api(&self) -> Api {
         Api {
-            request_sender: self.command_sender.clone(),
+            command_sender: self.command_sender.clone(),
         }
     }
 
@@ -104,7 +104,7 @@ impl Updater {
 ///
 ///
 pub struct Api {
-    request_sender: mpsc::Sender<Command>,
+    command_sender: mpsc::Sender<Command>,
 }
 
 impl Api {
@@ -119,7 +119,7 @@ impl Api {
             output_id,
         });
 
-        self.request_sender.send(request).await.unwrap();
+        self.command_sender.send(request).await.unwrap();
 
         finish::Handle { response_receiver }
     }
