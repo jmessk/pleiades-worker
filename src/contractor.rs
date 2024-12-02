@@ -13,8 +13,8 @@ pub struct Contractor {
 
     /// interface to access this component
     ///
-    request_sender: mpsc::Sender<Request>,
-    request_receiver: mpsc::Receiver<Request>,
+    // command_sender: mpsc::Sender<Request>,
+    command_receiver: mpsc::Receiver<Request>,
 
     /// number of jobs currently being contracted
     ///
@@ -24,28 +24,35 @@ pub struct Contractor {
 impl Contractor {
     /// new
     ///
-    pub fn new(client: Arc<pleiades_api::Client>) -> Self {
-        let (request_sender, request_receiver) = mpsc::channel(64);
+    pub fn new(client: Arc<pleiades_api::Client>) -> (Self, Api) {
+        let (command_sender, command_receiver) = mpsc::channel(64);
 
-        Self {
+        let contractor = Self {
             client,
-            request_sender,
-            request_receiver,
+            // command_sender: command_sender.clone(),
+            command_receiver,
             task_counter: Arc::new(AtomicU32::new(0)),
-        }
+        };
+
+        let api = Api {
+            // num_contracting: self.task_counter.clone(),
+            command_sender,
+        };
+
+        (contractor, api)
     }
 
-    pub fn api(&self) -> Api {
-        Api {
-            // num_contracting: self.task_counter.clone(),
-            command_sender: self.request_sender.clone(),
-        }
-    }
+    // pub fn api(&self) -> Api {
+    //     Api {
+    //         // num_contracting: self.task_counter.clone(),
+    //         command_sender: self.request_sender.clone(),
+    //     }
+    // }
 
     /// run
     ///
     pub async fn run(&mut self) {
-        while let Some(request) = self.request_receiver.recv().await {
+        while let Some(request) = self.command_receiver.recv().await {
             let client = self.client.clone();
             let task_counter = self.task_counter.clone();
 
@@ -299,8 +306,7 @@ mod tests {
     #[tokio::test]
     async fn test_contract() {
         let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
-        let mut contractor = Contractor::new(client.clone());
-        let api = contractor.api();
+        let (mut contractor, api) = Contractor::new(client.clone());
 
         tokio::spawn(async move {
             contractor.run().await;

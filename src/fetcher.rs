@@ -12,7 +12,7 @@ pub struct Fetcher {
 
     /// interface to access this component
     ///
-    command_sender: mpsc::Sender<Command>,
+    // command_sender: mpsc::Sender<Command>,
     command_receiver: mpsc::Receiver<Command>,
 
     /// number of jobs currently being contracted
@@ -23,22 +23,26 @@ pub struct Fetcher {
 impl Fetcher {
     /// new
     ///
-    pub fn new(client: Arc<pleiades_api::Client>) -> Self {
-        let (request_sender, request_receiver) = mpsc::channel(64);
+    pub fn new(client: Arc<pleiades_api::Client>) -> (Self, Api) {
+        let (command_sender, command_receiver) = mpsc::channel(64);
 
-        Self {
+        let fetcher = Self {
             client,
-            command_sender: request_sender,
-            command_receiver: request_receiver,
+            // command_sender: command_sender.clone(),
+            command_receiver,
             task_counter: Arc::new(AtomicU32::new(0)),
-        }
+        };
+
+        let api = Api { command_sender };
+
+        (fetcher, api)
     }
 
-    pub fn api(&self) -> Api {
-        Api {
-            command_sender: self.command_sender.clone(),
-        }
-    }
+    // pub fn api(&self) -> Api {
+    //     Api {
+    //         command_sender: self.command_sender.clone(),
+    //     }
+    // }
 
     /// run
     ///
@@ -51,7 +55,9 @@ impl Fetcher {
                 task_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                 match request {
-                    Command::DownloadBlob(request) => Self::task_download_blob(client, request).await,
+                    Command::DownloadBlob(request) => {
+                        Self::task_download_blob(client, request).await
+                    }
                     Command::UploadBlob(request) => Self::task_upload_blob(client, request).await,
                 }
 
@@ -64,7 +70,10 @@ impl Fetcher {
 
     /// task
     ///
-    async fn task_download_blob(client: Arc<pleiades_api::Client>, request: download_blob::Request) {
+    async fn task_download_blob(
+        client: Arc<pleiades_api::Client>,
+        request: download_blob::Request,
+    ) {
         let download_request = pleiades_api::api::data::download::Request::builder()
             .data_id(request.blob_id)
             .build();
@@ -232,8 +241,7 @@ mod tests {
     #[tokio::test]
     async fn test_fetcher() {
         let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
-        let mut fetcher = Fetcher::new(client);
-        let api = fetcher.api();
+        let (mut fetcher, api) = Fetcher::new(client);
 
         tokio::spawn(async move {
             fetcher.run().await;

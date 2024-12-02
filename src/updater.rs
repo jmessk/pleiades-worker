@@ -11,7 +11,7 @@ pub struct Updater {
 
     /// interface to access this component
     ///
-    command_sender: mpsc::Sender<Command>,
+    // command_sender: mpsc::Sender<Command>,
     command_receiver: mpsc::Receiver<Command>,
 
     /// number of jobs currently being contracted
@@ -22,24 +22,30 @@ pub struct Updater {
 impl Updater {
     /// new
     ///
-    pub fn new(client: Arc<pleiades_api::Client>) -> Self {
-        let (request_sender, request_receiver) = mpsc::channel(64);
+    pub fn new(client: Arc<pleiades_api::Client>) -> (Self, Api) {
+        let (command_sender, command_receiver) = mpsc::channel(64);
 
-        Self {
+        let updater = Self {
             client,
-            command_sender: request_sender,
-            command_receiver: request_receiver,
+            // command_sender: command_sender.clone(),
+            command_receiver,
             task_counter: Arc::new(AtomicU32::new(0)),
-        }
+        };
+
+        let api = Api {
+            command_sender
+        };
+
+        (updater, api)
     }
 
     /// api
     ///
-    pub fn api(&self) -> Api {
-        Api {
-            command_sender: self.command_sender.clone(),
-        }
-    }
+    // pub fn api(&self) -> Api {
+    //     Api {
+    //         command_sender: self.command_sender.clone(),
+    //     }
+    // }
 
     /// run
     ///
@@ -279,11 +285,8 @@ mod tests {
     #[tokio::test]
     async fn test_contract() {
         let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
-        let mut contractor = Contractor::new(client.clone());
-        let api = contractor.api();
-
-        let mut updater = Updater::new(client.clone());
-        let updater_api = updater.api();
+        let (mut contractor, api) = Contractor::new(client.clone());
+        let (mut updater, _updater_api) = Updater::new(client.clone());
 
         tokio::spawn(async move {
             contractor.run().await;

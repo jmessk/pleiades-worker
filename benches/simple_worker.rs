@@ -14,17 +14,10 @@ async fn main() {
     let client = Arc::new(client);
 
     // components
-    let mut contractor = contractor::Contractor::new(client.clone());
-    let contractor_api = contractor.api();
-
-    let mut fetcher = fetcher::Fetcher::new(client.clone());
-    let fetcher_api = fetcher.api();
-
-    let mut data_manager = data_manager::DataManager::new(fetcher_api);
-    let data_manager_api = data_manager.api();
-
-    let mut updater = updater::Updater::new(client.clone());
-    let updater_api = updater.api();
+    let (mut contractor, contractor_api) = contractor::Contractor::new(client.clone());
+    let (mut fetcher, fetcher_api) = fetcher::Fetcher::new(client.clone());
+    let (mut data_manager, data_manager_api) = data_manager::DataManager::new(fetcher_api);
+    let (mut updater, updater_api) = updater::Updater::new(client.clone());
 
     // run
     tokio::spawn(async move {

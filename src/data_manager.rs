@@ -14,7 +14,7 @@ pub struct DataManager {
 
     /// interface to access this component
     ///
-    command_sender: mpsc::Sender<Command>,
+    // command_sender: mpsc::Sender<Command>,
     command_receiver: mpsc::Receiver<Command>,
 
     /// number of jobs currently being contracted
@@ -28,15 +28,19 @@ impl DataManager {
     ///
     ///
     ///
-    pub fn new(fetcher_api: fetcher::Api) -> Self {
-        let (request_sender, request_receiver) = mpsc::channel(64);
+    pub fn new(fetcher_api: fetcher::Api) -> (Self, Api) {
+        let (command_sender, command_receiver) = mpsc::channel(64);
 
-        Self {
+        let data_manager = Self {
             fetcher_api,
-            command_sender: request_sender,
-            command_receiver: request_receiver,
+            // command_sender: command_sender.clone(),
+            command_receiver,
             task_counter: Arc::new(AtomicU32::new(0)),
-        }
+        };
+
+        let api = Api { command_sender };
+
+        (data_manager, api)
     }
 
     /// api
@@ -44,11 +48,11 @@ impl DataManager {
     ///
     ///
     ///
-    pub fn api(&self) -> Api {
-        Api {
-            command_sender: self.command_sender.clone(),
-        }
-    }
+    // pub fn api(&self) -> Api {
+    //     Api {
+    //         command_sender: self.command_sender.clone(),
+    //     }
+    // }
 
     /// run
     ///
@@ -253,8 +257,7 @@ mod tests {
         let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
 
         // fetcher
-        let mut fetcher = fetcher::Fetcher::new(client);
-        let fetcher_api = fetcher.api();
+        let (mut fetcher, fetcher_api) = fetcher::Fetcher::new(client);
 
         tokio::spawn(async move {
             fetcher.run().await;
@@ -262,8 +265,7 @@ mod tests {
 
         // data manager
 
-        let mut data_manager = DataManager::new(fetcher_api);
-        let api = data_manager.api();
+        let (mut data_manager, api) = DataManager::new(fetcher_api);
 
         tokio::spawn(async move {
             data_manager.run().await;
