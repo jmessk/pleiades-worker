@@ -37,7 +37,7 @@ impl Contractor {
 
     pub fn api(&self) -> Api {
         Api {
-            num_contracting: self.task_counter.clone(),
+            // num_contracting: self.task_counter.clone(),
             command_sender: self.request_sender.clone(),
         }
     }
@@ -148,8 +148,9 @@ impl Contractor {
 ///
 ///
 ///
+#[derive(Clone)]
 pub struct Api {
-    num_contracting: Arc<AtomicU32>,
+    // num_contracting: Arc<AtomicU32>,
     command_sender: mpsc::Sender<Request>,
 }
 
@@ -170,12 +171,12 @@ impl Api {
         Handle { response_receiver }
     }
 
-    /// num_contracting
-    ///
-    pub fn num_contracting(&self) -> u32 {
-        self.num_contracting
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
+    // /// num_contracting
+    // ///
+    // pub fn num_contracting(&self) -> u32 {
+    //     self.num_contracting
+    //         .load(std::sync::atomic::Ordering::Relaxed)
+    // }
 }
 
 pub struct Request {
@@ -193,7 +194,11 @@ pub struct Handle {
 }
 
 impl Handle {
-    pub async fn recv_nowait(&mut self) -> Option<Response> {
+    pub async fn recv(self) -> Response {
+        self.response_receiver.await.unwrap()
+    }
+
+    pub fn recv_nowait(&mut self) -> Option<Response> {
         self.response_receiver.try_recv().ok()
     }
 }
@@ -302,9 +307,7 @@ mod tests {
         });
 
         let requester_client = client.clone();
-        let requester = tokio::spawn(async move {
-            generate_job(&requester_client).await
-        });
+        let requester = tokio::spawn(async move { generate_job(&requester_client).await });
 
         let worker_id = register_worker(&client).await;
         let handle = api.contract(worker_id).await;

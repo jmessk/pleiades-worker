@@ -1,4 +1,3 @@
-
 pub trait Component {
     type Request: Request;
     type Response: Response;

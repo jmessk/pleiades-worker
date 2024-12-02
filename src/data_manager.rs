@@ -2,7 +2,7 @@ use bytes::Bytes;
 use std::sync::{atomic::AtomicU32, Arc};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::rm::fetcher;
+use crate::fetcher;
 
 /// Contractor
 ///
@@ -25,9 +25,9 @@ pub struct DataManager {
 impl DataManager {
     /// new
     ///
-    /// 
-    /// 
-    /// 
+    ///
+    ///
+    ///
     pub fn new(fetcher_api: fetcher::Api) -> Self {
         let (request_sender, request_receiver) = mpsc::channel(64);
 
@@ -40,10 +40,10 @@ impl DataManager {
     }
 
     /// api
-    /// 
-    /// 
-    /// 
-    /// 
+    ///
+    ///
+    ///
+    ///
     pub fn api(&self) -> Api {
         Api {
             command_sender: self.command_sender.clone(),
@@ -52,9 +52,9 @@ impl DataManager {
 
     /// run
     ///
-    /// 
-    /// 
-    /// 
+    ///
+    ///
+    ///
     pub async fn run(&mut self) {
         while let Some(request) = self.command_receiver.recv().await {
             let fetcher_api = self.fetcher_api.clone();
@@ -77,9 +77,9 @@ impl DataManager {
 
     /// task
     ///
-    /// 
-    /// 
-    /// 
+    ///
+    ///
+    ///
     async fn task_get_blob(fetcher_api: fetcher::Api, request: get_blob::Request) {
         let download_handle = fetcher_api.download_blob(request.blob_id).await;
         let data = download_handle.recv().await.data;
@@ -92,9 +92,9 @@ impl DataManager {
 
     /// task
     ///
-    /// 
-    /// 
-    /// 
+    ///
+    ///
+    ///
     async fn task_post_blob(fetcher_api: fetcher::Api, request: post_blob::Request) {
         let upload_handle = fetcher_api.upload_blob(request.data).await;
         let blob_id = upload_handle.recv().await.blob_id;
@@ -107,9 +107,9 @@ impl DataManager {
 
     /// wait_for_shutdown
     ///
-    /// 
-    /// 
-    /// 
+    ///
+    ///
+    ///
     pub async fn wait_for_shutdown(&self) {
         println!("Fetcher is shutting down");
 
@@ -127,6 +127,7 @@ impl DataManager {
 ///
 ///
 ///
+#[derive(Clone)]
 pub struct Api {
     command_sender: mpsc::Sender<Command>,
 }
@@ -134,9 +135,9 @@ pub struct Api {
 impl Api {
     /// get_blob
     ///
-    /// 
-    /// 
-    /// 
+    ///
+    ///
+    ///
     pub async fn get_blob(&self, blob_id: String) -> get_blob::Handle {
         let (response_sender, response_receiver) = oneshot::channel();
 
@@ -152,15 +153,15 @@ impl Api {
 
     /// post_blob
     ///
-    /// 
-    /// 
-    /// 
-    pub async fn post_blob(&self, data: Bytes) -> post_blob::Handle {
+    ///
+    ///
+    ///
+    pub async fn post_blob(&self, data: impl Into<Bytes>) -> post_blob::Handle {
         let (response_sender, response_receiver) = oneshot::channel();
 
         let request = Command::PostBlob(post_blob::Request {
             response_sender,
-            data,
+            data: data.into(),
         });
 
         self.command_sender.send(request).await.unwrap();
@@ -170,10 +171,10 @@ impl Api {
 }
 
 /// Command
-/// 
-/// 
-/// 
-/// 
+///
+///
+///
+///
 pub enum Command {
     GetBlob(get_blob::Request),
     PostBlob(post_blob::Request),
@@ -203,7 +204,11 @@ pub mod get_blob {
     }
 
     impl Handle {
-        pub async fn recv_nowait(&mut self) -> Option<Response> {
+        pub async fn recv(self) -> Response {
+            self.response_receiver.await.unwrap()
+        }
+
+        pub fn recv_nowait(&mut self) -> Option<Response> {
             self.response_receiver.try_recv().ok()
         }
     }
@@ -227,7 +232,11 @@ pub mod post_blob {
     }
 
     impl Handle {
-        pub async fn recv_nowait(&mut self) -> Option<Response> {
+        pub async fn recv(self) -> Response {
+            self.response_receiver.await.unwrap()
+        }
+
+        pub fn recv_nowait(&mut self) -> Option<Response> {
             self.response_receiver.try_recv().ok()
         }
     }
@@ -236,7 +245,6 @@ pub mod post_blob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rm::fetcher::Fetcher;
 
     use bytes::Bytes;
 
@@ -245,7 +253,7 @@ mod tests {
         let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
 
         // fetcher
-        let mut fetcher = Fetcher::new(client);
+        let mut fetcher = fetcher::Fetcher::new(client);
         let fetcher_api = fetcher.api();
 
         tokio::spawn(async move {
@@ -266,11 +274,11 @@ mod tests {
         let mut handle = api.post_blob(data.clone()).await;
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        let response = handle.recv_nowait().await.unwrap();
+        let response = handle.recv_nowait().unwrap();
 
         let mut handle = api.get_blob(response.blob_id).await;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        let response = handle.recv_nowait().await.unwrap();
+        let response = handle.recv_nowait().unwrap();
 
         assert_eq!(response.data, data);
     }

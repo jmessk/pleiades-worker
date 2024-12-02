@@ -1,7 +1,9 @@
+pub mod component;
+pub mod contractor;
 pub mod data_manager;
+pub mod fetcher;
 pub mod invoker;
-pub mod rm;
 pub mod runtime;
 pub mod scheduler;
 pub mod types;
-pub mod component;
+pub mod updater;
