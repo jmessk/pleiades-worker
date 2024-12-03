@@ -17,7 +17,7 @@ pub struct Job {
     pub status: JobStatus,
     pub id: String,
     pub lambda: Lambda,
-    pub input: Option<Blob>,
+    pub input: Blob,
 }
 
 #[derive(Debug)]
