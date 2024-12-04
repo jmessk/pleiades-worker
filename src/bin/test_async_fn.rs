@@ -2,7 +2,7 @@ use boa_engine::{property::Attribute, Context, JsArgs, JsResult, JsValue, Native
 use boa_runtime::Console;
 use std::{future::Future, rc::Rc};
 
-use pleiades_worker::runtime::job_queue;
+// use pleiades_worker::runtime::job_queue;
 
 #[tokio::main]
 async fn main() -> JsResult<()> {
@@ -46,10 +46,12 @@ async fn main() -> JsResult<()> {
 }
 
 fn init() -> Context {
-    let job_queue = Rc::new(job_queue::TokioJobQueue::new());
-    let mut context = Context::builder().job_queue(job_queue).build().unwrap();
+    // let job_queue = Rc::new(job_queue::TokioJobQueue::new());
+    // let mut context = Context::builder().job_queue(job_queue).build().unwrap();
+    let mut context = Context::default();
 
     let console = Console::init(&mut context);
+
     context
         .register_global_property(Console::NAME, console, Attribute::all())
         .expect("the console builtin shouldn't exist");

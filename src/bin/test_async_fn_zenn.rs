@@ -1,8 +1,12 @@
 use std::{cell::RefCell, collections::VecDeque, future::Future, pin::Pin, rc::Rc};
 
 use boa_engine::{
+    builtins::promise::PromiseState,
+    context::ContextBuilder,
     job::{FutureJob, JobQueue, NativeJob},
-    context::ContextBuilder, js_string, property::Attribute, Context, JsArgs, JsResult, JsValue, NativeFunction, Source
+    js_string,
+    property::Attribute,
+    Context, JsArgs, JsResult, JsValue, Module, NativeFunction, Source,
 };
 use boa_runtime::Console;
 
@@ -41,27 +45,36 @@ impl JobQueue for MyJobQueue {
             next_job = self.jobs.borrow_mut().pop_front();
         }
     }
-    fn run_jobs_async<'a, 'ctx, 'fut>(&'a self, context: &'ctx mut Context) -> Pin<Box<dyn Future<Output = ()> + 'fut>>
+    fn run_jobs_async<'a, 'ctx, 'fut>(
+        &'a self,
+        context: &'ctx mut Context,
+    ) -> Pin<Box<dyn Future<Output = ()> + 'fut>>
     where
         'a: 'fut,
         'ctx: 'fut,
     {
         Box::pin(async {
             let local = tokio::task::LocalSet::new();
-            local.run_until(async {
-                while !(self.jobs.borrow().is_empty() && self.futures.borrow().is_empty()) {
-                    context.run_jobs();
+            local
+                .run_until(async {
+                    while !(self.jobs.borrow().is_empty() && self.futures.borrow().is_empty()) {
+                        context.run_jobs();
 
-                    if let Some(res) = self.futures.borrow_mut().join_next().await {
-                        context.enqueue_job(res.unwrap())
+                        if let Some(res) = self.futures.borrow_mut().join_next().await {
+                            context.enqueue_job(res.unwrap())
+                        }
                     }
-                }
-            }).await;
+                })
+                .await;
         })
     }
 }
 
-fn sleep(_this: &JsValue, args: &[JsValue], context: &mut Context) -> impl Future<Output = JsResult<JsValue>> {
+fn sleep(
+    _this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> impl Future<Output = JsResult<JsValue>> {
     let delay = args.get_or_undefined(0).to_u32(context).unwrap();
     async move {
         tokio::time::sleep(std::time::Duration::from_millis(u64::from(delay))).await;
@@ -72,35 +85,45 @@ fn sleep(_this: &JsValue, args: &[JsValue], context: &mut Context) -> impl Futur
 #[tokio::main]
 async fn main() {
     let js_code = r"
-        (async () => {
-            for (let sec of [1, 2, 3, 4, 5]) {
-                await sleep(1000)
-                console.log(sec)
-            }
-        })()
+        console.log('start');
+        let s1 = sleep(1000);
+        let s2 = sleep(1000);
+        let s3 = sleep(1000);
+        
+        await Promise.all([s1, s2, s3]).then(() => {
+            console.log('all done');
+        });
+
+        console.log('end');
     ";
 
     let queue = MyJobQueue::new();
 
-    let mut context = &mut ContextBuilder::new()
+    let context = &mut ContextBuilder::new()
         .job_queue(Rc::new(queue))
         .build()
         .unwrap();
 
-    let console = Console::init(&mut context);
+    let console = Console::init(context);
 
     context
         .register_global_property(js_string!(Console::NAME), console, Attribute::all())
         .expect("the console object shouldn't exist yet");
 
     context
-        .register_global_builtin_callable(js_string!("sleep"), 1, NativeFunction::from_async_fn(sleep))
+        .register_global_builtin_callable(
+            js_string!("sleep"),
+            1,
+            NativeFunction::from_async_fn(sleep),
+        )
         .expect("the sleep builtin shouldn't exist yet");
 
-    let job = NativeJob::new(move |context| -> JsResult<JsValue> {
-        context.eval(Source::from_bytes(js_code))
-    });
+    let module = Module::parse(Source::from_bytes(js_code), None, context).unwrap();
+    let promise = module.load_link_evaluate(context);
 
-    context.enqueue_job(job);
     context.run_jobs_async().await;
+
+    if let PromiseState::Rejected(value) = promise.state() {
+        eprintln!("Uncaught {}", value.display())
+    }
 }

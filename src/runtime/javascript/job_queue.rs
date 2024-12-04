@@ -1,26 +1,16 @@
-use std::{
-    cell::{Cell, RefCell},
-    collections::VecDeque,
-    future::Future,
-    pin::Pin,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::RefCell, collections::VecDeque, future::Future, pin::Pin};
 
 use boa_engine::{
-    context::ContextBuilder,
     job::{FutureJob, JobQueue, NativeJob},
-    js_string,
-    native_function::NativeFunction,
-    property::Attribute,
-    Context, JsArgs, JsResult, JsValue, Source,
+    Context,
 };
 
 use tokio::task::JoinSet;
 
+#[derive(Default)]
 pub struct TokioJobQueue {
-    jobs: RefCell<VecDeque<NativeJob>>,
     futures: RefCell<JoinSet<NativeJob>>,
+    jobs: RefCell<VecDeque<NativeJob>>,
 }
 
 impl TokioJobQueue {
@@ -51,7 +41,6 @@ impl JobQueue for TokioJobQueue {
             next_job = self.jobs.borrow_mut().pop_front();
         }
     }
-
     fn run_jobs_async<'a, 'ctx, 'fut>(
         &'a self,
         context: &'ctx mut Context,
@@ -64,12 +53,9 @@ impl JobQueue for TokioJobQueue {
             let local = tokio::task::LocalSet::new();
             local
                 .run_until(async {
-                    // ジョブとFutureが無くなるまでループする
                     while !(self.jobs.borrow().is_empty() && self.futures.borrow().is_empty()) {
-                        // 溜まっているジョブを実行
                         context.run_jobs();
 
-                        // Futureの完了を1つ待って終わったら結果(NativeJob)をキューに追加
                         if let Some(res) = self.futures.borrow_mut().join_next().await {
                             context.enqueue_job(res.unwrap())
                         }

@@ -1,7 +1,9 @@
-use crate::types::Job;
+pub mod job_queue;
+pub mod module_loader;
 
 use boa_engine::{Context, JsArgs, JsResult, JsValue, NativeFunction, Source};
-use std::sync::mpsc;
+
+use crate::types::Job;
 
 // #[derive(Default)]
 pub struct Runtime {
@@ -20,18 +22,12 @@ impl Runtime {
     pub fn init() -> Context {
         let context = Context::default();
 
-
-
         todo!()
     }
 
     pub fn run(&mut self, job_context: Job) -> JsResult<()> {
-        // let result = self
-        //     .context
-        //     .eval(Source::from_bytes(&job_context.lambda.code))?;
-        // println!("{}", result.to_string(&mut self.context)?.to_std_string_escaped());
-        // self.context;
-    
+        
+
         Ok(())
     }
 }
