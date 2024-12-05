@@ -1,5 +1,5 @@
 pub mod runtime_thread;
-pub mod javascript;
+pub mod js;
 pub mod python;
 
 pub trait Context {}

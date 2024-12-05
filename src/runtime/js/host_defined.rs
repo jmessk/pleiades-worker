@@ -5,7 +5,7 @@ use boa_engine::{
 use boa_gc::{empty_trace, Finalize, Trace};
 use bytes::Bytes;
 
-#[derive(Finalize, JsData)]
+#[derive(Debug, Finalize, JsData)]
 pub struct InputBlob {
     pub id: String,
     // pub data: bytes::Bytes,
@@ -15,7 +15,7 @@ unsafe impl Trace for InputBlob {
     empty_trace!();
 }
 
-#[derive(Finalize, JsData)]
+#[derive(Debug, Finalize, JsData)]
 pub struct Output {
     pub data: Option<Bytes>,
 }

@@ -7,19 +7,24 @@ use boa_engine::{
 };
 use bytes::Bytes;
 
-use crate::runtime::javascript::host_defined;
+use crate::runtime::js::host_defined;
 
 pub fn get_job_context(
     _this: &JsValue,
     _args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    let input = context.get_data::<host_defined::InputBlob>().unwrap();
+    // let input = context.get_data::<host_defined::InputBlob>().unwrap();
     // let obj = JsObject::
+    let binding = context.realm().host_defined_mut();
+    let input = binding.get::<host_defined::InputBlob>().unwrap();
+
+    println!("get_job_context: {:?}", input);
+
     Ok(js_string!(input.id.clone()).into())
 }
 
-pub fn finish_job(_this: &JsValue, args: &[JsValue], context: &mut Context) {
+pub fn set_output(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let data_js_obj = args.first().expect("data is required");
 
     let data = match data_js_obj.get_type() {
@@ -35,4 +40,6 @@ pub fn finish_job(_this: &JsValue, args: &[JsValue], context: &mut Context) {
     };
 
     context.insert_data(host_defined::Output { data });
+
+    Ok(JsValue::undefined())
 }
