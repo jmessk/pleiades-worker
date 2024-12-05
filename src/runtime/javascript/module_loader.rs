@@ -1,11 +1,17 @@
 use boa_engine::{
-    module::ModuleLoader,  Context, JsNativeError, JsResult, JsString,Module, Source
+    module::ModuleLoader, Context, JsNativeError, JsResult, JsString, Module, Source,
 };
 
-#[derive(Debug, Default)]
-pub struct MyModuleLoader;
+const JS_CODE: &str = r#"
+    const blob = new Blob();
 
-impl ModuleLoader for MyModuleLoader {
+    export { blob };
+"#;
+
+#[derive(Debug, Default)]
+pub struct CustomModuleLoader;
+
+impl ModuleLoader for CustomModuleLoader {
     fn load_imported_module(
         &self,
         _referrer: boa_engine::module::Referrer,
@@ -15,13 +21,16 @@ impl ModuleLoader for MyModuleLoader {
     ) {
         match specifier.to_std_string_escaped().as_str() {
             "pleiades" => {
-                let js_code = "export default 'Hello'";
-                
-                let module = Module::parse(Source::from_bytes(js_code), None, context);
+                let module = Module::parse(Source::from_bytes(JS_CODE), None, context);
 
                 finish_load(module, context);
             }
-            _ => finish_load(Err(JsNativeError::typ().with_message("module import error!").into()), context)
+            _ => finish_load(
+                Err(JsNativeError::typ()
+                    .with_message("module import error")
+                    .into()),
+                context,
+            ),
         };
     }
 }

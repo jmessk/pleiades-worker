@@ -1,11 +1,11 @@
 use boa_engine::{Context, JsArgs, JsResult, JsValue, NativeFunction, Source};
 use std::sync::mpsc;
 
-use crate::runtime::javascript::Runtime;
+// use crate::runtime::javascript::Context;
 use crate::types::JobMetadata;
 
 pub struct RuntimeThread {
-    runtime: Runtime,
+    runtime: Context,
     job_sender: mpsc::Sender<JobMetadata>,
     job_receiver: mpsc::Receiver<JobMetadata>,
 }
