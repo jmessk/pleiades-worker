@@ -1,69 +1,62 @@
-use boa_engine::{context, js_string, Context, Module, NativeFunction, Source};
+use boa_engine::{js_string, Context, JsResult, Module, NativeFunction, Source};
 use bytes::Bytes;
 use std::rc::Rc;
 
-use crate::runtime::js::{function, host_defined, job_queue, module_loader};
+use crate::runtime::js::{host_defined, job_queue, module};
 use crate::types::Job;
 
 // #[derive(Default)]
 pub struct Runtime {
     context: Context,
-}
-
-impl Default for Runtime {
-    fn default() -> Self {
-        Self {
-            context: Self::init_context(),
-        }
-    }
+    job: Job,
 }
 
 impl Runtime {
-    fn init_context() -> Context {
+    pub fn new(job: Job) -> Self {
+        let loader = Rc::new(module::CustomModuleLoader::new());
+
+        let context = Self::init_context(loader.clone());
+
+        let mut runtime = Self { context, job };
+
+        runtime.register_builtin_class();
+        runtime.register_builtin_function();
+        runtime.register_builtin_module(loader.clone());
+
+        runtime.register_user_defined_function(loader).unwrap();
+        runtime.register_job_context();
+        runtime.finalize();
+
+        runtime
+    }
+
+    fn init_context(loader: Rc<module::CustomModuleLoader>) -> Context {
         let mut context = Context::builder()
             .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
-            .module_loader(Rc::new(module_loader::CustomModuleLoader {}))
+            .module_loader(loader)
             .build()
             .unwrap();
 
-
         // init console
         boa_runtime::Console::init(&mut context);
-        
-        Self::register_class(&mut context);
-        Self::register_function(&mut context);
-
-        // context.insert_data(host_defined::Blob {
-        //     id: "0".to_string(),
-        //     // data: bytes::Bytes::from("Hello, World!"),
-        // });
-
-        // host defined
-        // context
-        //     .realm()
-        //     .host_defined_mut()
-        //     .insert(host_defined::InputBlob {
-        //         id: job.id.clone(),
-        //         // data: bytes::Bytes::from("Hello, World!"),
-        //     });
 
         context
     }
 
-    fn register_class(context: &mut Context) {
+    fn register_builtin_class(&mut self) {
         use super::class;
 
-        context.register_global_class::<class::Blob>().unwrap();
-        context.register_global_class::<class::Nn>().unwrap();
-        context
+        self.context.register_global_class::<class::Blob>().unwrap();
+        self.context.register_global_class::<class::Nn>().unwrap();
+        self.context
             .register_global_class::<class::HttpClient>()
             .unwrap();
     }
 
-    fn register_function(context: &mut Context) {
+    fn register_builtin_function(&mut self) {
         use super::function;
 
-        context
+        self.context
             .register_global_builtin_callable(
                 js_string!("getJobContext"),
                 0,
@@ -71,7 +64,7 @@ impl Runtime {
             )
             .unwrap();
 
-        context
+        self.context
             .register_global_builtin_callable(
                 js_string!("setOutput"),
                 1,
@@ -80,77 +73,123 @@ impl Runtime {
             .unwrap();
     }
 
-    // pub async fn run(&mut self) -> Option<Bytes> {
-    //     // let code = String::from_utf8(self.job.lambda.code.data.to_vec()).unwrap();
-    //     let context = &mut self.context;
+    fn register_builtin_module(&mut self, loader: Rc<module::CustomModuleLoader>) {
+        let module = module::pleiades::get_module(&mut self.context);
+        loader.add_module("pleiades", module);
+    }
 
-    //     let module = Module::parse(
-    //         Source::from_bytes(&self.job.lambda.code.data),
-    //         None,
-    //         context,
-    //     )
-    //     .unwrap();
+    /// ## Register user-defined function
+    ///
+    /// - The shape of user-defined function is as follows:
+    ///
+    /// ```js
+    /// import { blob } from "pleiades"
+    ///
+    /// async function fetch(job) {
+    ///     const inputData = blob.get(job.input.id);
+    ///    
+    ///    return "output";
+    /// }
+    ///
+    /// export default fetch;
+    /// ```
+    fn register_user_defined_function(
+        &mut self,
+        loader: Rc<module::CustomModuleLoader>,
+    ) -> JsResult<()> {
+        let source = Source::from_bytes(&self.job.lambda.code.data);
+        let module = Module::parse(source, None, &mut self.context)?;
 
-    //     let _ = module.load_link_evaluate(context);
-    //     // context.run_jobs();
-    //     context.run_jobs_async().await;
+        loader.add_module("user", module);
 
-    //     self.output()
-    // }
+        Ok(())
+    }
+
+    fn register_job_context(&mut self) {
+        self.context
+            .realm()
+            .host_defined_mut()
+            .insert(host_defined::JobContext {
+                id: self.job.input.id.clone(),
+                data: self.job.input.data.clone(),
+            });
+    }
+
+    fn finalize(&mut self) {
+        let entry_point = r#"
+            import fetch from "user";
+
+            let job = getJobContext();
+            setOutput(await fetch(job));
+        "#;
+
+        let source = Source::from_bytes(entry_point);
+        let module = Module::parse(source, None, &mut self.context).unwrap();
+
+        let _ = module.load_link_evaluate(&mut self.context);
+    }
+
+    pub fn run(&mut self) -> Option<Bytes> {
+
+        self.context.run_jobs();
+        // context.run_jobs_async().await;
+
+        self.output()
+    }
 
     fn output(&mut self) -> Option<Bytes> {
         self.context
-            .get_data::<host_defined::Output>()
+            .realm()
+            .host_defined()
+            .get::<host_defined::UserOutput>()
             .unwrap()
             .data
             .clone()
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::types;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types;
 
-//     const CODE: &str = r#"
-//         import { blob } from "pleiades"
+    const CODE: &str = r#"
+        import { blob } from "pleiades"
 
-//         async function fetch(job) {
-//             let someData = blob.get(job.id);
-//             console.log(someData);
+        async function fetch(job) {
+            let someData = blob.get(job);
+            return "output"; 
+        }
 
-//             return "output"; 
-//         }
+        export default fetch;
+    "#;
 
-//         let job = getJobContext();
+    fn new_job() -> Job {
+        Job {
+            id: "11111".to_string(),
+            status: types::JobStatus::Assigned,
+            lambda: types::Lambda {
+                id: "22222".to_string(),
+                code: types::Blob {
+                    id: "33333".to_string(),
+                    data: Bytes::from(CODE),
+                },
+            },
+            input: types::Blob {
+                id: "44444".to_string(),
+                data: Bytes::from("this_is_input_data"),
+            },
+        }
+    }
 
-//         finishJob(await fetch(job));
+    #[test]
+    fn test_runtime_run() {
+        let job = new_job();
 
-//         export default fetch;
-//     "#;
+        let mut runtime = Runtime::new(job);
 
-//     #[tokio::test]
-//     // #[test]
-//     async fn test_runtime_run() {
-//         let job = Job {
-//             id: "0".to_string(),
-//             status: types::JobStatus::Assigned,
-//             lambda: types::Lambda {
-//                 id: "0".to_string(),
-//                 code: types::Blob {
-//                     id: "0".to_string(),
-//                     data: Bytes::from(CODE),
-//                 },
-//             },
-//             input: types::Blob {
-//                 id: "0".to_string(),
-//                 data: Bytes::from(""),
-//             },
-//         };
+        let output = runtime.run();
 
-//         let mut runtime = JsContext::new(job);
-//         let output = runtime.run().await;
-
-//         assert_eq!(output, Some(Bytes::from("output")));
-//     }
-// }
+        assert_eq!(output, Some(Bytes::from("output")));
+    }
+}

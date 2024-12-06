@@ -1,10 +1,4 @@
-use std::{f32::consts::PI, future::Future};
-
-use boa_engine::{
-    builtins::array_buffer::ArrayBuffer, js_string, native_function::NativeFunction,
-    object::builtins::JsArrayBuffer, value::Type, Context, JsArgs, JsData, JsError, JsNativeError,
-    JsObject, JsResult, JsString, JsValue, NativeObject, Source,
-};
+use boa_engine::{js_string, value::Type, Context, JsResult, JsValue};
 use bytes::Bytes;
 
 use crate::runtime::js::host_defined;
@@ -14,14 +8,13 @@ pub fn get_job_context(
     _args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    // let input = context.get_data::<host_defined::InputBlob>().unwrap();
-    // let obj = JsObject::
-    let binding = context.realm().host_defined_mut();
-    let input = binding.get::<host_defined::InputBlob>().unwrap();
+    let binding = context.realm().host_defined();
+    let input = binding.get::<host_defined::JobContext>();
 
-    println!("get_job_context: {:?}", input);
-
-    Ok(js_string!(input.id.clone()).into())
+    match input {
+        Some(input) => Ok(js_string!(input.id.clone()).into()),
+        None => Ok(JsValue::undefined()),
+    }
 }
 
 pub fn set_output(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -39,7 +32,10 @@ pub fn set_output(_this: &JsValue, args: &[JsValue], context: &mut Context) -> J
         }
     };
 
-    context.insert_data(host_defined::Output { data });
+    context
+        .realm()
+        .host_defined_mut()
+        .insert(host_defined::UserOutput { data });
 
     Ok(JsValue::undefined())
 }

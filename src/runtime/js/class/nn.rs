@@ -41,7 +41,6 @@ impl Nn {
         _args: &[JsValue],
         _context: &mut Context,
     ) -> impl Future<Output = JsResult<JsValue>> {
-        println!("get");
         async {
             let output = js_string!("blob");
             Ok(output.into())
