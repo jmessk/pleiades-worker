@@ -32,7 +32,8 @@ impl Runtime {
 
     fn init_context(loader: Rc<module::CustomModuleLoader>) -> Context {
         let mut context = Context::builder()
-            .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
+            // .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
+            .job_queue(Rc::new(job_queue::SimpleJobQueue::new()))
             .module_loader(loader)
             .build()
             .unwrap();
@@ -130,7 +131,6 @@ impl Runtime {
     }
 
     pub fn run(&mut self) -> Option<Bytes> {
-
         self.context.run_jobs();
         // context.run_jobs_async().await;
 

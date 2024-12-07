@@ -45,27 +45,5 @@ impl ModuleLoader for CustomModuleLoader {
                 context,
             ),
         }
-
-        // match specifier.to_std_string_escaped().as_str() {
-        //     "pleiades" => {
-        //         let module = Module::parse(Source::from_bytes(JS_CODE), None, context);
-
-        //         finish_load(module, context);
-        //     }
-        //     // "user" => {
-        //     //     let code = context
-        //     //         .realm()
-        //     //         .host_defined()
-        //     //         .get::<host_defined::Code>()
-        //     //         .unwrap();
-        //     //     let module = Module::parse(Source::from_bytes(code.code.as_ref()), None, context);
-        //     // }
-        //     _ => finish_load(
-        //         Err(JsNativeError::typ()
-        //             .with_message("module import error")
-        //             .into()),
-        //         context,
-        //     ),
-        // };
     }
 }
