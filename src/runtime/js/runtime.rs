@@ -37,7 +37,7 @@ impl Runtime {
     fn init_context() -> Context {
         Context::builder()
             // .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
-            .job_queue(Rc::new(job_queue::SimpleJobQueue::new()))
+            .job_queue(Rc::new(job_queue::SyncJobQueue::new()))
             .module_loader(Rc::new(module::CustomModuleLoader::new()))
             .build()
             .unwrap()
@@ -140,11 +140,13 @@ impl Runtime {
     }
 
     pub fn run(&mut self) -> Option<Bytes> {
-        self.context.run_jobs();
+        // self.context.run_jobs();
         // context.run_jobs_async().await;
-        self.context
-            .eval(Source::from_bytes("setOutput('inner eval')"))
-            .unwrap();
+        // self.context
+        //     .eval(Source::from_bytes("setOutput('inner eval')"))
+        //     .unwrap();
+        self.context.run_jobs();
+        self.context.run_jobs();
 
         self.output()
     }
@@ -171,7 +173,7 @@ mod tests {
         async function fetch(job) {
             let someData = blob.get(job);
 
-            console.log("console");
+            console.log(someData);
 
             return "output"; 
         }

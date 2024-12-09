@@ -1,5 +1,5 @@
 pub mod tokio;
-pub mod simple;
+pub mod sync;
 
 pub use tokio::TokioJobQueue;
-pub use simple::SimpleJobQueue;
+pub use sync::SyncJobQueue;

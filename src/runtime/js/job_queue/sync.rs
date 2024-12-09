@@ -1,12 +1,11 @@
-use std::{cell::RefCell, collections::VecDeque};
-
 use boa_engine::{
     job::{FutureJob, JobQueue, NativeJob},
     Context,
 };
+use std::{cell::RefCell, collections::VecDeque};
 
 #[derive(Default)]
-pub struct SimpleJobQueue(RefCell<VecDeque<NativeJob>>);
+pub struct SyncJobQueue(RefCell<VecDeque<NativeJob>>);
 
 // impl Debug for SimpleJobQueue {
 //     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -14,7 +13,7 @@ pub struct SimpleJobQueue(RefCell<VecDeque<NativeJob>>);
 //     }
 // }
 
-impl SimpleJobQueue {
+impl SyncJobQueue {
     /// Creates an empty `SimpleJobQueue`.
     #[must_use]
     pub fn new() -> Self {
@@ -22,7 +21,7 @@ impl SimpleJobQueue {
     }
 }
 
-impl JobQueue for SimpleJobQueue {
+impl JobQueue for SyncJobQueue {
     fn enqueue_promise_job(&self, job: NativeJob, _: &mut Context) {
         self.0.borrow_mut().push_back(job);
     }
@@ -30,14 +29,13 @@ impl JobQueue for SimpleJobQueue {
     fn run_jobs(&self, context: &mut Context) {
         // Yeah, I have no idea why Rust extends the lifetime of a `RefCell` that should be immediately
         // dropped after calling `pop_front`.
-        let mut next_job = self.0.borrow_mut().pop_front();
-        while let Some(job) = next_job {
-            if job.call(context).is_err() {
-                self.0.borrow_mut().clear();
-                return;
-            };
-            next_job = self.0.borrow_mut().pop_front();
-        }
+        // while let Some(job) = self.0.borrow_mut().pop_front() {
+        //     if job.call(context).is_err() {
+        //         self.0.borrow_mut().clear();
+        //         return;
+        //     }
+        // }
+        println!("SimpleJobQueue::run_jobs: {:?}", self.0.borrow().len());
     }
 
     fn enqueue_future_job(&self, future: FutureJob, context: &mut Context) {
