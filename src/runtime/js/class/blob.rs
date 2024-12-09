@@ -5,6 +5,7 @@ use boa_engine::{
     js_string, Context, JsData, JsResult, JsValue, NativeFunction,
 };
 use boa_gc::{empty_trace, Finalize, Trace};
+use bytes::Bytes;
 
 #[derive(Debug, Finalize, JsData)]
 pub struct Blob {}
@@ -45,5 +46,31 @@ impl Blob {
             let output = js_string!("blob");
             Ok(output.into())
         }
+    }
+}
+
+// #[derive(Debug, Finalize, JsData)]
+// pub struct HostDefinedGet {
+//     pub id: String,
+// }
+
+// unsafe impl Trace for HostDefinedGet {
+//     empty_trace!();
+// }
+
+pub mod get {
+    use super::*;
+
+    #[derive(Debug, Finalize, JsData)]
+    pub struct Request {
+        pub blob_id: String,
+    }
+
+    unsafe impl Trace for Request {
+        empty_trace!();
+    }
+
+    pub struct Response {
+        pub data: Bytes,
     }
 }

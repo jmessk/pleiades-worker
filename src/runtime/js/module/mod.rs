@@ -1,6 +1,4 @@
-use boa_engine::{
-    module::ModuleLoader, Context, JsNativeError, JsResult, JsString, Module,
-};
+use boa_engine::{module::ModuleLoader, Context, JsNativeError, JsResult, JsString, Module};
 use boa_gc::GcRefCell;
 use std::collections::HashMap;
 
@@ -15,13 +13,15 @@ impl CustomModuleLoader {
     pub fn new() -> Self {
         Self::default()
     }
-
-    pub fn add_module(&self, name: &str, module: Module) {
-        self.inner.borrow_mut().insert(name.to_string(), module);
-    }
 }
 
 impl ModuleLoader for CustomModuleLoader {
+    fn register_module(&self, specifier: JsString, module: Module) {
+        self.inner
+            .borrow_mut()
+            .insert(specifier.to_std_string_escaped(), module);
+    }
+
     fn load_imported_module(
         &self,
         _referrer: boa_engine::module::Referrer,

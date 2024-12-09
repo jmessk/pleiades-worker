@@ -1,4 +1,6 @@
+use boa_engine::property::Attribute;
 use boa_engine::{js_string, Context, JsResult, Module, NativeFunction, Source};
+use boa_runtime::Console;
 use bytes::Bytes;
 use std::rc::Rc;
 
@@ -13,38 +15,43 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new(job: Job) -> Self {
-        let loader = Rc::new(module::CustomModuleLoader::new());
+        let mut runtime = Self {
+            context: Self::init_context(),
+            job,
+        };
 
-        let context = Self::init_context(loader.clone());
+        // builtin
+        runtime.register_builtin_properties();
+        runtime.register_builtin_classes();
+        runtime.register_builtin_functions();
+        runtime.register_builtin_modules();
 
-        let mut runtime = Self { context, job };
-
-        runtime.register_builtin_class();
-        runtime.register_builtin_function();
-        runtime.register_builtin_module(loader.clone());
-
-        runtime.register_user_defined_function(loader).unwrap();
+        // user-defined
+        runtime.register_user_defined_functions().unwrap();
         runtime.register_job_context();
-        runtime.finalize();
+        runtime.register_entrypoint();
 
         runtime
     }
 
-    fn init_context(loader: Rc<module::CustomModuleLoader>) -> Context {
-        let mut context = Context::builder()
+    fn init_context() -> Context {
+        Context::builder()
             // .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
             .job_queue(Rc::new(job_queue::SimpleJobQueue::new()))
-            .module_loader(loader)
+            .module_loader(Rc::new(module::CustomModuleLoader::new()))
             .build()
-            .unwrap();
-
-        // init console
-        boa_runtime::Console::init(&mut context);
-
-        context
+            .unwrap()
     }
 
-    fn register_builtin_class(&mut self) {
+    fn register_builtin_properties(&mut self) {
+        let console = Console::init(&mut self.context);
+
+        self.context
+            .register_global_property(js_string!(Console::NAME), console, Attribute::all())
+            .unwrap();
+    }
+
+    fn register_builtin_classes(&mut self) {
         use super::class;
 
         self.context.register_global_class::<class::Blob>().unwrap();
@@ -54,7 +61,7 @@ impl Runtime {
             .unwrap();
     }
 
-    fn register_builtin_function(&mut self) {
+    fn register_builtin_functions(&mut self) {
         use super::function;
 
         self.context
@@ -74,9 +81,12 @@ impl Runtime {
             .unwrap();
     }
 
-    fn register_builtin_module(&mut self, loader: Rc<module::CustomModuleLoader>) {
-        let module = module::pleiades::get_module(&mut self.context);
-        loader.add_module("pleiades", module);
+    fn register_builtin_modules(&mut self) {
+        let pleiades = module::pleiades::get_module(&mut self.context);
+
+        self.context
+            .module_loader()
+            .register_module(js_string!("pleiades"), pleiades);
     }
 
     /// ## Register user-defined function
@@ -88,20 +98,19 @@ impl Runtime {
     ///
     /// async function fetch(job) {
     ///     const inputData = blob.get(job.input.id);
-    ///    
+    ///  
     ///    return "output";
     /// }
     ///
     /// export default fetch;
     /// ```
-    fn register_user_defined_function(
-        &mut self,
-        loader: Rc<module::CustomModuleLoader>,
-    ) -> JsResult<()> {
+    fn register_user_defined_functions(&mut self) -> JsResult<()> {
         let source = Source::from_bytes(&self.job.lambda.code.data);
         let module = Module::parse(source, None, &mut self.context)?;
 
-        loader.add_module("user", module);
+        self.context
+            .module_loader()
+            .register_module(js_string!("user"), module);
 
         Ok(())
     }
@@ -116,7 +125,7 @@ impl Runtime {
             });
     }
 
-    fn finalize(&mut self) {
+    fn register_entrypoint(&mut self) {
         let entry_point = r#"
             import fetch from "user";
 
@@ -133,18 +142,21 @@ impl Runtime {
     pub fn run(&mut self) -> Option<Bytes> {
         self.context.run_jobs();
         // context.run_jobs_async().await;
+        self.context
+            .eval(Source::from_bytes("setOutput('inner eval')"))
+            .unwrap();
 
         self.output()
     }
 
     fn output(&mut self) -> Option<Bytes> {
-        self.context
-            .realm()
-            .host_defined()
-            .get::<host_defined::UserOutput>()
-            .unwrap()
-            .data
-            .clone()
+        let output_object = self.context.realm().host_defined();
+        let output = output_object.get::<host_defined::UserOutput>();
+
+        match output {
+            Some(output) => output.data.clone(),
+            None => None,
+        }
     }
 }
 
@@ -158,13 +170,16 @@ mod tests {
 
         async function fetch(job) {
             let someData = blob.get(job);
+
+            console.log("console");
+
             return "output"; 
         }
 
         export default fetch;
     "#;
 
-    fn new_job() -> Job {
+    fn generate_sample_job() -> Job {
         Job {
             id: "11111".to_string(),
             status: types::JobStatus::Assigned,
@@ -172,19 +187,19 @@ mod tests {
                 id: "22222".to_string(),
                 code: types::Blob {
                     id: "33333".to_string(),
-                    data: Bytes::from(CODE),
+                    data: CODE.into(),
                 },
             },
             input: types::Blob {
                 id: "44444".to_string(),
-                data: Bytes::from("this_is_input_data"),
+                data: "this_is_input_data".into(),
             },
         }
     }
 
     #[test]
     fn test_runtime_run() {
-        let job = new_job();
+        let job = generate_sample_job();
 
         let mut runtime = Runtime::new(job);
 
