@@ -14,7 +14,7 @@ unsafe impl Trace for HttpClient {
 }
 
 impl Class for HttpClient {
-    const NAME: &'static str = "Blob";
+    const NAME: &'static str = "HttpClient";
     const LENGTH: usize = 0;
 
     fn data_constructor(

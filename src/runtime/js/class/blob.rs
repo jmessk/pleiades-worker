@@ -10,6 +10,8 @@ use boa_engine::{
 use boa_gc::{empty_trace, Finalize, Trace};
 use bytes::Bytes;
 
+use crate::runtime::js::host_defined::HostDefined;
+
 #[derive(Debug, Finalize, JsData)]
 pub struct Blob {}
 
@@ -30,48 +32,25 @@ impl Class for Blob {
     }
 
     fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
-        // let fn_get = NativeFunction::from_fn_ptr(Self::get);
-        let fn_get = NativeFunction::from_async_fn(Self::get);
-
-        class.method(js_string!("get"), 1, fn_get);
+        class
+            .method(
+                js_string!("get"),
+                1,
+                NativeFunction::from_fn_ptr(Self::get),
+            )
+            .method(
+                js_string!("getAsync"),
+                1,
+                NativeFunction::from_async_fn(Self::get_async),
+            );
 
         Ok(())
     }
 }
 
 impl Blob {
-    pub fn get(
-        _this: &JsValue,
-        _args: &[JsValue],
-        _context: &mut Context,
-    ) -> impl Future<Output = JsResult<JsValue>> {
-        async {
-            let output = js_string!("blob");
-            Ok(output.into())
-        }
-    }
-
-    pub fn get_async(
-        _this: &JsValue,
-        _args: &[JsValue],
-        _context: &mut Context,
-    ) -> impl Future<Output = JsResult<JsValue>> {
-        async {
-            let output = js_string!("blob");
-            Ok(output.into())
-        }
-    }
-
-    pub fn get_promise(
-        _this: &JsValue,
-        args: &[JsValue],
-        context: &mut Context,
-    ) -> JsResult<JsValue> {
-        // let blob_id = args
-        //     .first()
-        //     .unwrap()
-        //     .to_string(context)?
-        //     .to_std_string_escaped();
+    pub fn get(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+        println!("Blob.getPromise is called: {:?}", args);
 
         let blob_id = match args.first() {
             Some(blob_id) => blob_id.to_string(context)?.to_std_string_escaped(),
@@ -82,20 +61,32 @@ impl Blob {
             }
         };
 
-        let request = get::Request { blob_id };
+        get::Request { blob_id }.insert_to_context(context);
 
-        // context.realm().host_defined_mut().insert(value)
+        let executor = |resolvers: &ResolvingFunctions, context: &mut Context| {
+            let result = js_string!("getPromise").into();
 
-        let executor = move |resolvers: &ResolvingFunctions, context| {
             resolvers
                 .resolve
                 .call(&JsValue::undefined(), &[result], context)?;
+
             Ok(JsValue::undefined())
         };
 
         let promise = JsPromise::new(executor, context);
 
         Ok(promise.into())
+    }
+
+    pub fn get_async(
+        _this: &JsValue,
+        _args: &[JsValue],
+        _context: &mut Context,
+    ) -> impl Future<Output = JsResult<JsValue>> {
+        async {
+            let output = js_string!("blob_async");
+            Ok(output.into())
+        }
     }
 }
 
@@ -119,6 +110,8 @@ pub mod get {
     unsafe impl Trace for Request {
         empty_trace!();
     }
+
+    impl HostDefined for Request {}
 
     pub struct Response {
         pub data: Bytes,

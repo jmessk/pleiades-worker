@@ -146,7 +146,6 @@ impl Runtime {
         //     .eval(Source::from_bytes("setOutput('inner eval')"))
         //     .unwrap();
         self.context.run_jobs();
-        self.context.run_jobs();
 
         self.output()
     }
@@ -167,21 +166,7 @@ mod tests {
     use super::*;
     use crate::types;
 
-    const CODE: &str = r#"
-        import { blob } from "pleiades"
-
-        async function fetch(job) {
-            let someData = blob.get(job);
-
-            console.log(someData);
-
-            return "output"; 
-        }
-
-        export default fetch;
-    "#;
-
-    fn generate_sample_job() -> Job {
+    fn generate_sample_job(code: &'static str) -> Job {
         Job {
             id: "11111".to_string(),
             status: types::JobStatus::Assigned,
@@ -189,7 +174,7 @@ mod tests {
                 id: "22222".to_string(),
                 code: types::Blob {
                     id: "33333".to_string(),
-                    data: CODE.into(),
+                    data: code.into(),
                 },
             },
             input: types::Blob {
@@ -200,8 +185,24 @@ mod tests {
     }
 
     #[test]
-    fn test_runtime_run() {
-        let job = generate_sample_job();
+    fn test_class() {
+        let code = r#"
+        import { blob } from "pleiades"
+
+        async function fetch(job) {
+            console.log("job: " + job);
+            console.log(blob.get);
+            let someData = await blob.get(job);
+
+            console.log(someData);
+
+            return "output"; 
+        }
+
+        export default fetch;
+    "#;
+
+        let job = generate_sample_job(code);
 
         let mut runtime = Runtime::new(job);
 
