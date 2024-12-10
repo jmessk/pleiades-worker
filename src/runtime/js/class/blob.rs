@@ -8,9 +8,8 @@ use boa_engine::{
     Context, JsData, JsError, JsNativeError, JsResult, JsValue, NativeFunction,
 };
 use boa_gc::{empty_trace, Finalize, Trace};
-use bytes::Bytes;
 
-use crate::runtime::js::host_defined::HostDefined;
+use crate::runtime::js::host_defined::{blob, HostDefined as _};
 
 #[derive(Debug, Finalize, JsData)]
 pub struct Blob {}
@@ -33,11 +32,7 @@ impl Class for Blob {
 
     fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
         class
-            .method(
-                js_string!("get"),
-                1,
-                NativeFunction::from_fn_ptr(Self::get),
-            )
+            .method(js_string!("get"), 1, NativeFunction::from_fn_ptr(Self::get))
             .method(
                 js_string!("getAsync"),
                 1,
@@ -61,7 +56,7 @@ impl Blob {
             }
         };
 
-        get::Request { blob_id }.insert_to_context(context);
+        blob::get::Request { blob_id }.insert_to_context(context);
 
         let executor = |resolvers: &ResolvingFunctions, context: &mut Context| {
             let result = js_string!("getPromise").into();
@@ -87,33 +82,5 @@ impl Blob {
             let output = js_string!("blob_async");
             Ok(output.into())
         }
-    }
-}
-
-// #[derive(Debug, Finalize, JsData)]
-// pub struct HostDefinedGet {
-//     pub id: String,
-// }
-
-// unsafe impl Trace for HostDefinedGet {
-//     empty_trace!();
-// }
-
-pub mod get {
-    use super::*;
-
-    #[derive(Debug, Finalize, JsData)]
-    pub struct Request {
-        pub blob_id: String,
-    }
-
-    unsafe impl Trace for Request {
-        empty_trace!();
-    }
-
-    impl HostDefined for Request {}
-
-    pub struct Response {
-        pub data: Bytes,
     }
 }

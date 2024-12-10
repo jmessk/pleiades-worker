@@ -74,9 +74,9 @@ impl Runtime {
 
         self.context
             .register_global_builtin_callable(
-                js_string!("setOutput"),
+                js_string!("setUserOutput"),
                 1,
-                NativeFunction::from_fn_ptr(function::set_output),
+                NativeFunction::from_fn_ptr(function::set_user_output),
             )
             .unwrap();
     }
@@ -130,7 +130,7 @@ impl Runtime {
             import fetch from "user";
 
             let job = getJobContext();
-            setOutput(await fetch(job));
+            setUserOutput(await fetch(job));
         "#;
 
         let source = Source::from_bytes(entry_point);
@@ -168,17 +168,17 @@ mod tests {
 
     fn generate_sample_job(code: &'static str) -> Job {
         Job {
-            id: "11111".to_string(),
+            id: "11111".into(),
             status: types::JobStatus::Assigned,
             lambda: types::Lambda {
-                id: "22222".to_string(),
+                id: "22222".into(),
                 code: types::Blob {
-                    id: "33333".to_string(),
+                    id: "33333".into(),
                     data: code.into(),
                 },
             },
             input: types::Blob {
-                id: "44444".to_string(),
+                id: "44444".into(),
                 data: "this_is_input_data".into(),
             },
         }
@@ -190,13 +190,10 @@ mod tests {
         import { blob } from "pleiades"
 
         async function fetch(job) {
-            console.log("job: " + job);
-            console.log(blob.get);
             let someData = await blob.get(job);
-
             console.log(someData);
 
-            return "output"; 
+            return "test_output"; 
         }
 
         export default fetch;
@@ -208,6 +205,6 @@ mod tests {
 
         let output = runtime.run();
 
-        assert_eq!(output, Some(Bytes::from("output")));
+        assert_eq!(output, Some(Bytes::from("test_output")));
     }
 }

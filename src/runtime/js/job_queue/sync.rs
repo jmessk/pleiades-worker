@@ -4,6 +4,8 @@ use boa_engine::{
 };
 use std::{cell::RefCell, collections::VecDeque};
 
+use crate::runtime::js::host_defined::{self, HostDefined};
+
 #[derive(Default)]
 pub struct SyncJobQueue(RefCell<VecDeque<NativeJob>>);
 
@@ -23,28 +25,34 @@ impl SyncJobQueue {
 
 impl JobQueue for SyncJobQueue {
     fn enqueue_promise_job(&self, job: NativeJob, _: &mut Context) {
-        println!("SyncJobQueue::enqueue_promise_job");
+        println!("SyncJobQueue::enqueue_promise_job: enqueuing job");
         self.0.borrow_mut().push_back(job);
     }
 
-    fn enqueue_future_job(&self, future: FutureJob, context: &mut Context) {
-        println!("SyncJobQueue::enqueue_future_job");
-        // let job = pollster::block_on(future);
-        // self.enqueue_promise_job(job, context);
+    fn enqueue_future_job(&self, _future: FutureJob, _context: &mut Context) {
+        println!("SyncJobQueue::enqueue_future_job: enqueuing future job");
+        println!("SyncJobQueue::enqueue_future_job: unreachable code");
     }
 
     fn run_jobs(&self, context: &mut Context) {
-        println!("SyncJobQueue::run_jobs");
+        println!("SyncJobQueue::run_jobs: running jobs");
+
         // Yeah, I have no idea why Rust extends the lifetime of a `RefCell` that should be immediately
         // dropped after calling `pop_front`.
         let mut next_job = self.0.borrow_mut().pop_front();
         while let Some(job) = next_job {
+            // check promise job using host_defined
+            if host_defined::blob::get::Request::exists_in_context(context) {
+                return;
+            }
+
             if job.call(context).is_err() {
                 self.0.borrow_mut().clear();
                 return;
             };
             next_job = self.0.borrow_mut().pop_front();
         }
-        // println!("SimpleJobQueue::run_jobs: {:?}", self.0.borrow().len());
+
+        println!("SyncJobQueue::run_jobs: finished running jobs");
     }
 }
