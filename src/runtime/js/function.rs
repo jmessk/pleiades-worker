@@ -3,7 +3,7 @@ use bytes::Bytes;
 
 use crate::runtime::js::host_defined::{self, HostDefined};
 
-pub fn get_job_context(
+pub fn get_user_input(
     _this: &JsValue,
     _args: &[JsValue],
     context: &mut Context,
@@ -15,7 +15,7 @@ pub fn get_job_context(
     //     Some(input) => Ok(js_string!(input.id.clone()).into()),
     //     None => Ok(JsValue::undefined()),
     // }
-    host_defined::JobContext::get_from_context(context)
+    host_defined::UserInput::get_from_context(context)
         .map(|input| Ok(js_string!(input.id).into()))
         .unwrap_or_else(|| Ok(JsValue::undefined()))
 }

@@ -1,9 +1,7 @@
 pub mod blob;
-mod job_context;
-mod user_output;
+mod user;
 
-pub use job_context::JobContext;
-pub use user_output::UserOutput;
+pub use user::{UserInput, UserOutput};
 
 use boa_engine::{Context, JsData, NativeObject};
 use boa_gc::Finalize;
@@ -19,6 +17,12 @@ where
     fn get_from_context(context: &Context) -> Option<Self>;
 
     fn exists_in_context(context: &Context) -> bool {
-        Self::get_from_context(context).is_some()
+        let host_defined = context.realm().host_defined();
+        host_defined.has::<Self>()
+    }
+
+    fn remove_from_context(context: &mut Context) -> Option<Box<Self>> {
+        let mut host_defined = context.realm().host_defined_mut();
+        host_defined.remove::<Self>()
     }
 }

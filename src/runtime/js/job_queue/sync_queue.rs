@@ -32,20 +32,33 @@ impl JobQueue for SyncJobQueue {
     fn enqueue_future_job(&self, _future: FutureJob, _context: &mut Context) {
         println!("SyncJobQueue::enqueue_future_job: enqueuing future job");
         println!("SyncJobQueue::enqueue_future_job: unreachable code");
+
+        
     }
 
     fn run_jobs(&self, context: &mut Context) {
+        println!(
+            "SyncJobQueue::run_jobs: running jobs: {:?}",
+            self.0.borrow().len()
+        );
         println!("SyncJobQueue::run_jobs: running jobs");
+        if host_defined::blob::get::Request::exists_in_context(context) {
+            println!("SyncJobQueue::run_jobs: found request in context");
+            return;
+        }
+
+        let dummy_job = NativeJob::new(
+            |_context| {
+                println!("SyncJobQueue::run_jobs: dummy job");
+                Ok(());
+            },
+        );
 
         // Yeah, I have no idea why Rust extends the lifetime of a `RefCell` that should be immediately
         // dropped after calling `pop_front`.
         let mut next_job = self.0.borrow_mut().pop_front();
         while let Some(job) = next_job {
             // check promise job using host_defined
-            if host_defined::blob::get::Request::exists_in_context(context) {
-                return;
-            }
-
             if job.call(context).is_err() {
                 self.0.borrow_mut().clear();
                 return;

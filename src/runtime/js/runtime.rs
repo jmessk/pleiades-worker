@@ -9,7 +9,7 @@ use crate::types::Job;
 
 // #[derive(Default)]
 pub struct Runtime {
-    context: Context,
+    pub context: Context,
     job: Job,
 }
 
@@ -28,7 +28,7 @@ impl Runtime {
 
         // user-defined
         runtime.register_user_defined_functions().unwrap();
-        runtime.register_job_context();
+        runtime.register_user_input();
         runtime.register_entrypoint();
 
         runtime
@@ -66,9 +66,9 @@ impl Runtime {
 
         self.context
             .register_global_builtin_callable(
-                js_string!("getJobContext"),
+                js_string!("getUserInput"),
                 0,
-                NativeFunction::from_fn_ptr(function::get_job_context),
+                NativeFunction::from_fn_ptr(function::get_user_input),
             )
             .unwrap();
 
@@ -115,11 +115,11 @@ impl Runtime {
         Ok(())
     }
 
-    fn register_job_context(&mut self) {
+    fn register_user_input(&mut self) {
         self.context
             .realm()
             .host_defined_mut()
-            .insert(host_defined::JobContext {
+            .insert(host_defined::UserInput {
                 id: self.job.input.id.clone(),
                 data: self.job.input.data.clone(),
             });
@@ -129,7 +129,7 @@ impl Runtime {
         let entry_point = r#"
             import fetch from "user";
 
-            let job = getJobContext();
+            let job = getUserInput();
             setUserOutput(await fetch(job));
         "#;
 
@@ -139,18 +139,16 @@ impl Runtime {
         let _ = module.load_link_evaluate(&mut self.context);
     }
 
-    pub fn run(&mut self) -> Option<Bytes> {
+    pub fn step(&mut self) {
         // self.context.run_jobs();
         // context.run_jobs_async().await;
         // self.context
         //     .eval(Source::from_bytes("setOutput('inner eval')"))
         //     .unwrap();
-        self.context.run_jobs();
-
-        self.output()
+        self.context.job_queue().run_jobs(&mut self.context);
     }
 
-    fn output(&mut self) -> Option<Bytes> {
+    pub fn output(&mut self) -> Option<Bytes> {
         let output_object = self.context.realm().host_defined();
         let output = output_object.get::<host_defined::UserOutput>();
 
@@ -163,6 +161,8 @@ impl Runtime {
 
 #[cfg(test)]
 mod tests {
+    use host_defined::HostDefined;
+
     use super::*;
     use crate::types;
 
@@ -203,8 +203,55 @@ mod tests {
 
         let mut runtime = Runtime::new(job);
 
-        let output = runtime.run();
+        runtime.step();
+        runtime.step();
+        let output = runtime.output();
 
-        assert_eq!(output, Some(Bytes::from("test_output")));
+        assert_eq!(output, Some("test_output".into()));
+    }
+
+    #[test]
+    fn test_output() {
+        let code = r#"
+        import { blob } from "pleiades"
+
+        async function fetch(job) {
+            // let someData = blob.get(job);
+            // console.log(someData);
+            // console.log(await someData);
+
+            // return "test_output"; 
+
+            new Promise((resolve) => {
+                console.log("Promise called");
+            }).then(() => {
+                console.log("Promise resolved");
+                resolve("test_output");
+            });
+        }
+
+        export default fetch;
+    "#;
+
+        let job = generate_sample_job(code);
+
+        let mut runtime = Runtime::new(job);
+
+        // runtime.step();
+
+        use crate::runtime::js::host_defined::blob;
+        blob::get::Response {
+            data: Bytes::from("test_output"),
+        }
+        .insert_to_context(&mut runtime.context);
+
+        runtime.step();
+
+        println!("**********");
+
+        runtime.step();
+        let output = runtime.output();
+
+        assert_eq!(output, Some("test_output".into()));
     }
 }
