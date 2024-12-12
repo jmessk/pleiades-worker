@@ -1,7 +1,13 @@
-use std::sync::{atomic::AtomicU32, Arc};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::pleiades_type::{Job, JobStatus};
+use crate::{
+    data_manager,
+    pleiades_type::{Job, JobStatus},
+};
 
 /// Contractor
 ///
@@ -11,6 +17,11 @@ use crate::pleiades_type::{Job, JobStatus};
 pub struct Updater {
     client: Arc<pleiades_api::Client>,
 
+    /// data manager api
+    ///
+    ///
+    data_manager_api: data_manager::Api,
+
     /// interface to access this component
     ///
     // command_sender: mpsc::Sender<Command>,
@@ -18,20 +29,23 @@ pub struct Updater {
 
     /// number of jobs currently being contracted
     ///
-    task_counter: Arc<AtomicU32>,
+    task_counter: Arc<AtomicUsize>,
 }
 
 impl Updater {
     /// new
     ///
-    pub fn new(client: Arc<pleiades_api::Client>) -> (Self, Api) {
+    pub fn new(
+        client: Arc<pleiades_api::Client>,
+        data_manager_api: data_manager::Api,
+    ) -> (Self, Api) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let updater = Self {
             client,
-            // command_sender: command_sender.clone(),
+            data_manager_api,
             command_receiver,
-            task_counter: Arc::new(AtomicU32::new(0)),
+            task_counter: Arc::new(AtomicUsize::new(0)),
         };
 
         let api = Api { command_sender };
@@ -53,18 +67,20 @@ impl Updater {
         while let Some(request) = self.command_receiver.recv().await {
             // clone fields to bind
             let client = self.client.clone();
+            let data_manager_api = self.data_manager_api.clone();
             let task_counter = self.task_counter.clone();
 
             // new task
             tokio::spawn(async move {
-                task_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                task_counter.fetch_add(1, Ordering::Relaxed);
 
                 match request {
-                    Command::FinishJob(request) => Self::task_finish_job(client, request).await,
-                    // Command::PostBlob(request) => Self::task_post_blob(client, request).await,
+                    Command::FinishJob(request) => {
+                        Self::task_finish_job(client, data_manager_api, request).await
+                    } // Command::PostBlob(request) => Self::task_post_blob(client, request).await,
                 }
 
-                task_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                task_counter.fetch_sub(1, Ordering::Relaxed);
             });
         }
 
@@ -73,21 +89,19 @@ impl Updater {
 
     /// task
     ///
-    async fn task_finish_job(client: Arc<pleiades_api::Client>, request: finish::Request) {
+    async fn task_finish_job(
+        client: Arc<pleiades_api::Client>,
+        data_manager_api: data_manager::Api,
+        request: finish::Request,
+    ) {
         match request.job.status {
             JobStatus::Finished(output) => {
-                let upload_request = pleiades_api::api::data::upload::Request::builder()
-                    .data(output)
-                    .build();
-
-                let upload_response = client
-                    .call_api(&upload_request)
-                    .await
-                    .expect("no error handling: upload");
+                let post_handle = data_manager_api.post_blob(output).await;
+                let post_response = post_handle.recv().await;
 
                 let update_request = pleiades_api::api::job::update::Request::builder()
                     .job_id(request.job.id)
-                    .data_id(upload_response.data_id)
+                    .data_id(post_response.blob.id)
                     .status("finished")
                     .build();
 
@@ -122,7 +136,7 @@ impl Updater {
     pub async fn wait_for_shutdown(&self) {
         println!("Updater is shutting down");
 
-        while self.task_counter.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+        while self.task_counter.load(Ordering::Relaxed) > 0 {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
 
@@ -313,8 +327,8 @@ mod tests {
 
         let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
         let (mut data_manager, data_manager_api) = DataManager::new(fetcher_api);
-        let (mut contractor, api) = Contractor::new(client.clone(), data_manager_api);
-        let (mut updater, _updater_api) = Updater::new(client.clone());
+        let (mut contractor, api) = Contractor::new(client.clone(), data_manager_api.clone(), 16);
+        let (mut updater, _updater_api) = Updater::new(client.clone(), data_manager_api);
 
         tokio::spawn(async move {
             fetcher.run().await;
@@ -331,7 +345,7 @@ mod tests {
         let requester = tokio::spawn(async move { generate_job(&requester_client).await });
 
         let worker_id = register_worker(&client).await;
-        let handle = api.contract(worker_id).await;
+        let handle = api.try_contract(worker_id).await.unwrap();
 
         let response = handle.recv().await;
 

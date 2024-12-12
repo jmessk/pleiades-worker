@@ -1,5 +1,6 @@
 use bytes::Bytes;
-use std::sync::{atomic::AtomicU32, Arc};
+use std::sync::atomic::Ordering;
+use std::sync::{atomic::AtomicUsize, Arc};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::fetcher;
@@ -20,7 +21,7 @@ pub struct DataManager {
 
     /// number of jobs currently being contracted
     ///
-    task_counter: Arc<AtomicU32>,
+    task_counter: Arc<AtomicUsize>,
 }
 
 impl DataManager {
@@ -36,7 +37,7 @@ impl DataManager {
             fetcher_api,
             // command_sender: command_sender.clone(),
             command_receiver,
-            task_counter: Arc::new(AtomicU32::new(0)),
+            task_counter: Arc::new(AtomicUsize::new(0)),
         };
 
         let api = Api { command_sender };
@@ -66,14 +67,14 @@ impl DataManager {
             let task_counter = self.task_counter.clone();
 
             tokio::spawn(async move {
-                task_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                task_counter.fetch_add(1, Ordering::Relaxed);
 
                 match request {
                     Command::GetBlob(request) => Self::task_get_blob(fetcher_api, request).await,
                     Command::PostBlob(request) => Self::task_post_blob(fetcher_api, request).await,
                 }
 
-                task_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                task_counter.fetch_sub(1, Ordering::Relaxed);
             });
         }
 
@@ -101,13 +102,18 @@ impl DataManager {
     ///
     ///
     async fn task_post_blob(fetcher_api: fetcher::Api, request: post_blob::Request) {
-        let upload_handle = fetcher_api.upload_blob(request.data).await;
-        let blob_id = upload_handle.recv().await.blob_id;
+        let upload_handle = fetcher_api.upload_blob(request.data.clone()).await;
+        let blob = upload_handle.recv().await.blob;
 
         request
             .response_sender
-            .send(post_blob::Response { blob_id })
-            .expect("fetcher");
+            .send(post_blob::Response {
+                blob: Blob {
+                    id: blob.id,
+                    data: request.data,
+                },
+            })
+            .expect("data_manager");
     }
 
     /// wait_for_shutdown
@@ -116,14 +122,14 @@ impl DataManager {
     ///
     ///
     pub async fn wait_for_shutdown(&self) {
-        println!("Fetcher is shutting down");
+        println!("Data Manager is shutting down");
 
-        while self.task_counter.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+        while self.task_counter.load(Ordering::Relaxed) > 0 {
             print!(".");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
 
-        println!("Fetcher is shut down");
+        println!("Data Manager is shut down");
     }
 }
 
@@ -229,7 +235,7 @@ pub mod post_blob {
 
     #[derive(Debug)]
     pub struct Response {
-        pub blob_id: String,
+        pub blob: Blob,
     }
 
     pub struct Handle {
@@ -255,7 +261,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetcher() {
-        let client = Arc::new(pleiades_api::Client::try_new("http://master.local/api/v0.5/").unwrap());
+        let client =
+            Arc::new(pleiades_api::Client::try_new("http://master.local/api/v0.5/").unwrap());
 
         // fetcher
         let (mut fetcher, fetcher_api) = fetcher::Fetcher::new(client);
@@ -279,7 +286,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         let response = handle.recv_nowait().unwrap();
 
-        let mut handle = api.get_blob(response.blob_id).await;
+        let mut handle = api.get_blob(response.blob.id).await;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         let response = handle.recv_nowait().unwrap();
 

@@ -1,5 +1,8 @@
 use bytes::Bytes;
-use std::sync::{atomic::AtomicU32, Arc};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::pleiades_type::Blob;
@@ -19,7 +22,7 @@ pub struct Fetcher {
 
     /// number of jobs currently being contracted
     ///
-    task_counter: Arc<AtomicU32>,
+    task_counter: Arc<AtomicUsize>,
 }
 
 impl Fetcher {
@@ -30,9 +33,8 @@ impl Fetcher {
 
         let fetcher = Self {
             client,
-            // command_sender: command_sender.clone(),
             command_receiver,
-            task_counter: Arc::new(AtomicU32::new(0)),
+            task_counter: Arc::new(AtomicUsize::new(0)),
         };
 
         let api = Api { command_sender };
@@ -54,7 +56,7 @@ impl Fetcher {
             let task_counter = self.task_counter.clone();
 
             tokio::spawn(async move {
-                task_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                task_counter.fetch_add(1, Ordering::Relaxed);
 
                 match request {
                     Command::DownloadBlob(request) => {
@@ -63,7 +65,7 @@ impl Fetcher {
                     Command::UploadBlob(request) => Self::task_upload_blob(client, request).await,
                 }
 
-                task_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                task_counter.fetch_sub(1, Ordering::Relaxed);
             });
         }
 
@@ -100,7 +102,7 @@ impl Fetcher {
     ///
     async fn task_upload_blob(client: Arc<pleiades_api::Client>, request: upload_blob::Request) {
         let upload_request = pleiades_api::api::data::upload::Request::builder()
-            .data(request.data)
+            .data(request.data.clone())
             .build();
 
         let upload_response = client.call_api(&upload_request).await;
@@ -110,7 +112,10 @@ impl Fetcher {
         request
             .response_sender
             .send(upload_blob::Response {
-                blob_id: upload_response.data_id,
+                blob: Blob {
+                    id: upload_response.data_id,
+                    data: request.data,
+                },
             })
             .expect("fetcher");
     }
@@ -120,7 +125,7 @@ impl Fetcher {
     pub async fn wait_for_shutdown(&self) {
         println!("Fetcher is shutting down");
 
-        while self.task_counter.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+        while self.task_counter.load(Ordering::Relaxed) > 0 {
             print!(".");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
@@ -220,7 +225,7 @@ pub mod upload_blob {
 
     #[derive(Debug)]
     pub struct Response {
-        pub blob_id: String,
+        pub blob: Blob,
     }
 
     pub struct Handle {
@@ -245,7 +250,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetcher() {
-        let client = Arc::new(pleiades_api::Client::try_new("http://master.local/api/v0.5/").unwrap());
+        let client =
+            Arc::new(pleiades_api::Client::try_new("http://master.local/api/v0.5/").unwrap());
         let (mut fetcher, api) = Fetcher::new(client);
 
         tokio::spawn(async move {
@@ -257,7 +263,7 @@ mod tests {
         let handle = api.upload_blob(data.clone()).await;
         let response = handle.recv().await;
 
-        let handle = api.download_blob(response.blob_id).await;
+        let handle = api.download_blob(response.blob.id).await;
         let response = handle.recv().await;
 
         assert_eq!(response.blob.data, data);
