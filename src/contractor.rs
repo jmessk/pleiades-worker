@@ -1,7 +1,7 @@
 use std::sync::{atomic::AtomicU32, Arc};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::types::JobMetadata;
+use crate::pleiades_type::JobMetadata;
 
 /// Contractor
 ///

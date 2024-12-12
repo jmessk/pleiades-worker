@@ -6,8 +6,7 @@ use super::HostDefined;
 
 #[derive(Debug, Finalize, JsData)]
 pub struct UserInput {
-    pub id: String,
-    pub data: bytes::Bytes,
+    pub data: Bytes,
 }
 
 unsafe impl Trace for UserInput {
@@ -19,7 +18,6 @@ impl HostDefined for UserInput {
         let host_defined = context.realm().host_defined();
 
         host_defined.get::<Self>().map(|job_context| Self {
-            id: job_context.id.clone(),
             data: job_context.data.clone(),
         })
     }

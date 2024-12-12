@@ -5,6 +5,6 @@ pub mod fetcher;
 pub mod invoker;
 pub mod runtime;
 pub mod scheduler;
-pub mod types;
+pub mod pleiades_type;
 pub mod updater;
 pub mod executor;

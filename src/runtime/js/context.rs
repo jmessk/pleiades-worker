@@ -1,14 +1,18 @@
 use boa_engine::property::Attribute;
+use boa_engine::{js_string, JsResult, Module, NativeFunction, Source};
 use boa_runtime::Console;
 use bytes::Bytes;
 use std::rc::Rc;
 
-use crate::runtime::js::{host_defined, job_queue, module};
+use crate::pleiades_type::Job;
+use crate::runtime::js::{
+    host_defined::{HostDefined as _, UserInput, UserOutput},
+    job_queue, module,
+};
 use crate::runtime::Context;
-use crate::types::Job;
+use crate::runtime::{RuntimeRequest, RuntimeResponse};
 
-use super::host_defined::command;
-use super::host_defined::{HostDefined, UserOutput};
+// use super::host_defined::{HostDefined, UserOutput};
 
 #[derive(Debug)]
 pub struct JsContext {
@@ -50,11 +54,7 @@ impl JsContext {
         let console = Console::init(&mut self.context);
 
         self.context
-            .register_global_property(
-                boa_engine::js_string!(Console::NAME),
-                console,
-                Attribute::all(),
-            )
+            .register_global_property(js_string!(Console::NAME), console, Attribute::all())
             .unwrap();
     }
 
@@ -73,17 +73,17 @@ impl JsContext {
 
         self.context
             .register_global_builtin_callable(
-                boa_engine::js_string!("getUserInput"),
+                js_string!("getUserInput"),
                 0,
-                boa_engine::NativeFunction::from_fn_ptr(function::get_user_input),
+                NativeFunction::from_fn_ptr(function::get_user_input),
             )
             .unwrap();
 
         self.context
             .register_global_builtin_callable(
-                boa_engine::js_string!("setUserOutput"),
+                js_string!("setUserOutput"),
                 1,
-                boa_engine::NativeFunction::from_fn_ptr(function::set_user_output),
+                NativeFunction::from_fn_ptr(function::set_user_output),
             )
             .unwrap();
     }
@@ -93,7 +93,7 @@ impl JsContext {
 
         self.context
             .module_loader()
-            .register_module(boa_engine::js_string!("pleiades"), pleiades);
+            .register_module(js_string!("pleiades"), pleiades);
     }
 
     /// Register user-defined function
@@ -111,25 +111,21 @@ impl JsContext {
     ///
     /// export default fetch;
     /// ```
-    fn register_user_defined_functions(&mut self, job: &Job) -> boa_engine::JsResult<()> {
-        let source = boa_engine::Source::from_bytes(&job.lambda.code.data);
-        let module = boa_engine::Module::parse(source, None, &mut self.context)?;
+    fn register_user_defined_functions(&mut self, job: &Job) -> JsResult<()> {
+        let source = Source::from_bytes(&job.lambda.code.data);
+        let module = Module::parse(source, None, &mut self.context)?;
 
         self.context
             .module_loader()
-            .register_module(boa_engine::js_string!("user"), module);
+            .register_module(js_string!("user"), module);
 
         Ok(())
     }
 
     fn register_user_input(&mut self, job: &Job) {
-        self.context
-            .realm()
-            .host_defined_mut()
-            .insert(host_defined::UserInput {
-                id: job.input.id.clone(),
-                data: job.input.data.clone(),
-            });
+        self.context.realm().host_defined_mut().insert(UserInput {
+            data: job.input.data.clone(),
+        });
     }
 
     fn register_entrypoint(&mut self) {
@@ -140,50 +136,32 @@ impl JsContext {
             setUserOutput(await fetch(job));
         "#;
 
-        let source = boa_engine::Source::from_bytes(entry_point);
-        let module = boa_engine::Module::parse(source, None, &mut self.context).unwrap();
+        let source = Source::from_bytes(entry_point);
+        let module = Module::parse(source, None, &mut self.context).unwrap();
 
         let _ = module.load_link_evaluate(&mut self.context);
     }
 
-    pub fn step(&mut self) -> Option<command::RuntimeRequest> {
+    pub fn step(&mut self) -> Option<RuntimeRequest> {
         self.context.job_queue().run_jobs(&mut self.context);
-        command::RuntimeRequest::get_from_context(&mut self.context)
+        RuntimeRequest::get_from_context(&self.context)
     }
 
-    pub fn set_response(&mut self, response: command::RuntimeResponse) {
-        response.insert_to_context(&mut self.context);
+    pub fn set_response(&mut self, response: RuntimeResponse) {
+        response.insert_into_context(&mut self.context);
     }
 
     pub fn get_output(&mut self) -> Option<Bytes> {
-        UserOutput::get_from_context(&self.context).unwrap().data
+        match UserOutput::get_from_context(&self.context) {
+            Some(UserOutput { data }) => data,
+            None => None,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use host_defined::HostDefined;
-
     use super::*;
-    use crate::types;
-
-    fn generate_sample_job(code: &'static str) -> Job {
-        Job {
-            id: "11111".into(),
-            status: types::JobStatus::Assigned,
-            lambda: types::Lambda {
-                id: "22222".into(),
-                code: types::Blob {
-                    id: "33333".into(),
-                    data: code.into(),
-                },
-            },
-            input: types::Blob {
-                id: "44444".into(),
-                data: "this_is_input_data".into(),
-            },
-        }
-    }
 
     #[test]
     fn test_class() {
@@ -191,7 +169,7 @@ mod tests {
         import { blob } from "pleiades"
 
         async function fetch(job) {
-            let someData = await blob.get(job);
+            let someData = await blob.get("12345");
             console.log(someData);
 
             return "test_output"; 
@@ -200,14 +178,15 @@ mod tests {
         export default fetch;
     "#;
 
-        let job = generate_sample_job(code);
+        let mut job = Job::default();
+        job.lambda.code.data = code.into();
 
-        let mut runtime = JsContext::new(job);
+        let mut context = JsContext::init(&job);
 
-        runtime.step();
-        runtime.step();
-        let output = runtime.output();
+        let request = context.step();
+        println!("{:?}", request);
 
+        let output = context.get_output();
         assert_eq!(output, Some("test_output".into()));
     }
 
@@ -226,24 +205,23 @@ mod tests {
         export default fetch;
     "#;
 
-        let job = generate_sample_job(code);
+        let mut job = Job::default();
+        job.lambda.code.data = code.into();
 
-        let mut runtime = JsContext::new(job);
+        let mut context = JsContext::init(&job);
 
-        // runtime.step();
+        // use crate::runtime::js::host_defined::blob;
+        // blob::get::Response {
+        //     data: Bytes::from("test_output"),
+        // }
+        // .insert_to_context(&mut context.context);
 
-        use crate::runtime::js::host_defined::blob;
-        blob::get::Response {
-            data: Bytes::from("test_output"),
-        }
-        .insert_to_context(&mut runtime.context);
-
-        runtime.step();
+        context.step();
 
         println!("**********");
 
-        runtime.step();
-        let output = runtime.output();
+        context.step();
+        let output = context.get_output();
 
         assert_eq!(output, Some("test_output".into()));
     }
@@ -262,26 +240,24 @@ mod tests {
 
         export default fetch;
     "#;
+        let mut job = Job::default();
+        job.lambda.code.data = code.into();
 
-        let job = generate_sample_job(code);
+        let mut context = JsContext::init(&job);
 
-        let mut runtime = JsContext::new(job);
+        // use crate::runtime::js::host_defined::blob;
+        // blob::get::Response {
+        //     data: Bytes::from("test_output"),
+        // }
+        // .insert_to_context(&mut context.context);
 
-        // runtime.step();
-
-        use crate::runtime::js::host_defined::blob;
-        blob::get::Response {
-            data: Bytes::from("test_output"),
-        }
-        .insert_to_context(&mut runtime.context);
-
-        runtime.context.run_jobs_async().await;
+        context.context.run_jobs_async().await;
         // runtime.step();
 
         println!("**********");
 
         // runtime.step();
-        let output = runtime.output();
+        let output = context.get_output();
 
         assert_eq!(output, Some("test_output".into()));
     }

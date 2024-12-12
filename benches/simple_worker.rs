@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use pleiades_worker::{
     contractor, data_manager, fetcher,
-    types::{self, JobMetadata},
+    pleiades_type::{self, JobMetadata},
     updater,
 };
 
@@ -57,7 +57,7 @@ async fn register(client: &Arc<pleiades_api::Client>) -> String {
 async fn job_contractor(
     contractor_api: contractor::Api,
     worker_id: String,
-    job_sender: mpsc::Sender<types::JobMetadata>,
+    job_sender: mpsc::Sender<pleiades_type::JobMetadata>,
 ) {
     for _ in 0..8 {
         let contractor_api = contractor_api.clone();

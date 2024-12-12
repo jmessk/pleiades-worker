@@ -1,5 +1,3 @@
-use std::future::Future;
-
 use boa_engine::{
     builtins::promise::ResolvingFunctions,
     class::{Class, ClassBuilder},
@@ -8,8 +6,10 @@ use boa_engine::{
     Context, JsData, JsError, JsNativeError, JsResult, JsValue, NativeFunction,
 };
 use boa_gc::{empty_trace, Finalize, Trace};
+use std::future::Future;
 
-use crate::runtime::js::host_defined::{self, HostDefined as _};
+use crate::runtime::js::host_defined::HostDefined as _;
+use crate::runtime::{blob, RuntimeRequest, RuntimeResponse};
 
 #[derive(Debug, Finalize, JsData)]
 pub struct Blob {}
@@ -57,29 +57,27 @@ impl Blob {
         };
 
         // Create a request object and insert it into the context
-        host_defined::blob::get::Request { blob_id }.insert_to_context(context);
+        RuntimeRequest::Blob(blob::Request::Get(blob_id)).insert_into_context(context);
         println!("Blob.get: request inserted into context");
+
+        // need to delete
+        RuntimeResponse::Blob(blob::Response::Get("test_insert".into())).insert_into_context(context);
 
         let executor = |resolvers: &ResolvingFunctions, context: &mut Context| {
             println!("Blob.get: executor called");
 
-            use crate::runtime::js::host_defined::blob;
-            blob::get::Response {
-                data: "test_output".into(),
-            }
-            .insert_to_context(context);
+            let response = RuntimeResponse::get_from_context(context);
 
-            blob::get::Request::remove_from_context(context);
-
-            let response = host_defined::blob::get::Response::get_from_context(context);
             let result = match response {
-                Some(response) => {
-                    let array = JsUint8Array::from_iter(response.data, context)?;
+                Some(RuntimeResponse::Blob(blob::Response::Get(data))) => {
+                    let array = JsUint8Array::from_iter(data, context)?;
                     println!("Blob.get: response found: {:?}", array);
+
                     JsValue::from(array)
                 }
-                None => {
+                _ => {
                     println!("Blob.get: response not found");
+
                     JsValue::undefined()
                 }
             };
@@ -99,7 +97,7 @@ impl Blob {
     pub fn get_async(
         _this: &JsValue,
         args: &[JsValue],
-        context: &mut Context,
+        _context: &mut Context,
     ) -> impl Future<Output = JsResult<JsValue>> {
         println!("Blob.get_async: called: {:?}", args);
 

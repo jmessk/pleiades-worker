@@ -4,8 +4,6 @@ use boa_engine::{
 };
 use std::{cell::RefCell, collections::VecDeque};
 
-use crate::runtime::js::host_defined::{self, HostDefined};
-
 #[derive(Default)]
 pub struct SyncJobQueue(RefCell<VecDeque<NativeJob>>);
 
@@ -29,7 +27,7 @@ impl JobQueue for SyncJobQueue {
         self.0.borrow_mut().push_back(job);
     }
 
-    fn enqueue_future_job(&self, future: FutureJob, _context: &mut Context) {
+    fn enqueue_future_job(&self, _future: FutureJob, _context: &mut Context) {
         // println!("SyncJobQueue::enqueue_future_job: enqueuing future job: {:?}", future.as_mut().poll(cx));
         // println!("SyncJobQueue::enqueue_future_job: unreachable code");
     }
@@ -39,10 +37,10 @@ impl JobQueue for SyncJobQueue {
             "SyncJobQueue::run_jobs: running jobs: {:?}",
             self.0.borrow().len()
         );
-        if host_defined::blob::get::Request::exists_in_context(context) {
-            println!("SyncJobQueue::run_jobs: found request in context");
-            return;
-        }
+        // if host_defined::blob::get::Request::exists_in_context(context) {
+        //     println!("SyncJobQueue::run_jobs: found request in context");
+        //     return;
+        // }
 
         // let dummy_job = NativeJob::new(
         //     |_context| {
