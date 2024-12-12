@@ -71,7 +71,7 @@ mod tests {
                 return input;
             }
 
-            export default fetch;
+            // export default fetch;
         "#;
 
         let mut job = Job::default();

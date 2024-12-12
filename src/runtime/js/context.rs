@@ -12,12 +12,13 @@ use crate::runtime::js::{
 use crate::runtime::Context;
 use crate::runtime::{RuntimeRequest, RuntimeResponse};
 
-// use super::host_defined::{HostDefined, UserOutput};
-
 #[derive(Debug)]
 pub struct JsContext {
     pub context: boa_engine::Context,
 }
+
+unsafe impl Sync for JsContext {}
+unsafe impl Send for JsContext {}
 
 impl Context for JsContext {
     fn init(job: &Job) -> Self {

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.94"
 boa_engine = "0.19"
 boa_gc = "0.19.1"
 boa_runtime = "0.19.1"

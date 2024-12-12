@@ -2,6 +2,8 @@ use bytes::Bytes;
 use std::sync::{atomic::AtomicU32, Arc};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::pleiades_type::Blob;
+
 /// Contractor
 ///
 ///
@@ -75,7 +77,7 @@ impl Fetcher {
         request: download_blob::Request,
     ) {
         let download_request = pleiades_api::api::data::download::Request::builder()
-            .data_id(request.blob_id)
+            .data_id(&request.blob_id)
             .build();
 
         let download_response = client.call_api(&download_request).await;
@@ -86,7 +88,10 @@ impl Fetcher {
         request
             .response_sender
             .send(download_blob::Response {
-                data: download_response.data,
+                blob: Blob {
+                    id: request.blob_id,
+                    data: download_response.data,
+                },
             })
             .expect("fetcher");
     }
@@ -187,7 +192,7 @@ pub mod download_blob {
 
     #[derive(Debug)]
     pub struct Response {
-        pub data: Bytes,
+        pub blob: Blob,
     }
 
     pub struct Handle {
@@ -240,7 +245,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetcher() {
-        let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
+        let client = Arc::new(pleiades_api::Client::try_new("http://master.local/api/v0.5/").unwrap());
         let (mut fetcher, api) = Fetcher::new(client);
 
         tokio::spawn(async move {
@@ -255,6 +260,6 @@ mod tests {
         let handle = api.download_blob(response.blob_id).await;
         let response = handle.recv().await;
 
-        assert_eq!(response.data, data);
+        assert_eq!(response.blob.data, data);
     }
 }

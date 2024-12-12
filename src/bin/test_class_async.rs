@@ -112,7 +112,7 @@ impl ModuleLoader for CustomModuleLoader {
 
 #[tokio::main]
 async fn main() {
-    let client = pleiades_api::Client::new("https://mecrm.omochilab.jp/api/v0.5/ping").unwrap();
+    let client = pleiades_api::Client::try_new("https://mecrm.omochilab.jp/api/v0.5/ping").unwrap();
     let client = Arc::new(client);
 
     let (mut fetcher, api) = pleiades_worker::fetcher::Fetcher::new(client);

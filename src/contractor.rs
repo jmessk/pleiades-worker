@@ -1,7 +1,13 @@
-use std::sync::{atomic::AtomicU32, Arc};
+use std::{
+    sync::{atomic::AtomicU32, Arc},
+    time::Duration,
+};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::pleiades_type::JobMetadata;
+use crate::{
+    data_manager,
+    pleiades_type::{Job, JobStatus, Lambda},
+};
 
 /// Contractor
 ///
@@ -11,10 +17,14 @@ use crate::pleiades_type::JobMetadata;
 pub struct Contractor {
     client: Arc<pleiades_api::Client>,
 
+    /// data manager api
+    ///
+    data_manager_api: data_manager::Api,
+
     /// interface to access this component
     ///
     // command_sender: mpsc::Sender<Request>,
-    command_receiver: mpsc::Receiver<Request>,
+    command_receiver: mpsc::Receiver<Command>,
 
     /// number of jobs currently being contracted
     ///
@@ -24,12 +34,15 @@ pub struct Contractor {
 impl Contractor {
     /// new
     ///
-    pub fn new(client: Arc<pleiades_api::Client>) -> (Self, Api) {
+    pub fn new(
+        client: Arc<pleiades_api::Client>,
+        data_manager_api: data_manager::Api,
+    ) -> (Self, Api) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let contractor = Self {
             client,
-            // command_sender: command_sender.clone(),
+            data_manager_api,
             command_receiver,
             task_counter: Arc::new(AtomicU32::new(0)),
         };
@@ -51,14 +64,22 @@ impl Contractor {
 
     /// run
     ///
+    ///
+    ///
+    ///
     pub async fn run(&mut self) {
         while let Some(request) = self.command_receiver.recv().await {
             let client = self.client.clone();
+            let data_manager_api = self.data_manager_api.clone();
             let task_counter = self.task_counter.clone();
 
             tokio::spawn(async move {
                 task_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                Self::task(client, request).await;
+                match request {
+                    Command::Contract(request) => {
+                        Self::task_contract(client, data_manager_api, request).await
+                    }
+                }
                 task_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
             });
         }
@@ -68,7 +89,14 @@ impl Contractor {
 
     /// contract_task
     ///
-    async fn task(client: Arc<pleiades_api::Client>, request: Request) {
+    ///
+    ///
+    ///
+    async fn task_contract(
+        client: Arc<pleiades_api::Client>,
+        data_manager_api: data_manager::Api,
+        request: contract::Request,
+    ) {
         // Fetch a new job
         //
         let contract_request = pleiades_api::api::worker::contract::Request::builder()
@@ -96,21 +124,21 @@ impl Contractor {
             None => {
                 request
                     .response_sender
-                    .send(Response { contracted: None })
+                    .send(contract::Response { contracted: None })
                     .expect("contractor");
                 return;
             }
         };
 
-        // Fetch job metadata
+        // fetch job metadata
         //
         let info_request = pleiades_api::api::job::info::Request::builder()
-            .job_id(job_id)
+            .job_id(&job_id)
             .build();
 
         let info_response = client.call_api(&info_request).await;
 
-        let info = info_response.expect("no error handling: job info");
+        let job_info = info_response.expect("no error handling: job info");
         // let info = match info_response {
         //     Ok(response) => response,
         //     Err(err) => {
@@ -122,21 +150,39 @@ impl Contractor {
         //     }
         // };
 
-        let job_metadata = JobMetadata {
-            id: info.job_id,
-            lambda_id: info.lambda.lambda_id,
-            input_id: info.input.data_id,
+        // download input and lambda code
+        //
+        let get_input_handle = data_manager_api.get_blob(job_info.input.data_id).await;
+        let get_code_handle = data_manager_api.get_blob(job_info.lambda.data_id).await;
+
+        let input = get_input_handle.recv().await.blob;
+        let code = get_code_handle.recv().await.blob;
+
+        let job_metadata = Job {
+            id: job_id,
+            status: JobStatus::Assigned,
+            time_counter: Duration::default(),
+            deadline: Duration::from_millis(100),
+            lambda: Lambda {
+                id: job_info.lambda.lambda_id,
+                runtime: job_info.lambda.runtime,
+                code,
+            },
+            input,
         };
 
         request
             .response_sender
-            .send(Response {
+            .send(contract::Response {
                 contracted: Some(job_metadata),
             })
             .expect("contractor");
     }
 
     /// wait_for_shutdown
+    ///
+    ///
+    ///
     ///
     pub async fn wait_for_shutdown(&self) {
         println!("Contractor is shutting down");
@@ -158,24 +204,24 @@ impl Contractor {
 #[derive(Clone)]
 pub struct Api {
     // num_contracting: Arc<AtomicU32>,
-    command_sender: mpsc::Sender<Request>,
+    command_sender: mpsc::Sender<Command>,
 }
 
 impl Api {
     /// contract
     ///
-    pub async fn contract(&self, worker_id: String) -> Handle {
+    pub async fn contract(&self, worker_id: String) -> contract::Handle {
         // self.request_sender.send(runtime).await.unwrap();
         let (response_sender, response_receiver) = oneshot::channel();
 
-        let request = Request {
+        let request = Command::Contract(contract::Request {
             worker_id,
             response_sender,
-        };
+        });
 
         self.command_sender.send(request).await.unwrap();
 
-        Handle { response_receiver }
+        contract::Handle { response_receiver }
     }
 
     // /// num_contracting
@@ -186,32 +232,42 @@ impl Api {
     // }
 }
 
-pub struct Request {
-    worker_id: String,
-    response_sender: oneshot::Sender<Response>,
+pub enum Command {
+    Contract(contract::Request),
 }
 
-#[derive(Debug)]
-pub struct Response {
-    pub contracted: Option<JobMetadata>,
-}
+pub mod contract {
+    use super::*;
 
-pub struct Handle {
-    response_receiver: oneshot::Receiver<Response>,
-}
-
-impl Handle {
-    pub async fn recv(self) -> Response {
-        self.response_receiver.await.unwrap()
+    pub struct Request {
+        pub worker_id: String,
+        pub response_sender: oneshot::Sender<Response>,
     }
 
-    pub fn recv_nowait(&mut self) -> Option<Response> {
-        self.response_receiver.try_recv().ok()
+    #[derive(Debug)]
+    pub struct Response {
+        pub contracted: Option<Job>,
+    }
+
+    pub struct Handle {
+        pub response_receiver: oneshot::Receiver<Response>,
+    }
+
+    impl Handle {
+        pub async fn recv(self) -> Response {
+            self.response_receiver.await.unwrap()
+        }
+
+        pub fn recv_nowait(&mut self) -> Option<Response> {
+            self.response_receiver.try_recv().ok()
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::fetcher;
+
     use super::*;
 
     async fn register_worker(client: &Arc<pleiades_api::Client>) -> String {
@@ -304,9 +360,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ping() {
+        let client = pleiades_api::Client::try_new("http://192.168.1.47/api/v0.5/").unwrap();
+        println!("{:?}", client.ping().await.unwrap());
+    }
+
+    #[tokio::test]
     async fn test_contract() {
-        let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
-        let (mut contractor, api) = Contractor::new(client.clone());
+        // let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
+        let client = Arc::new(pleiades_api::Client::try_new("http://192.168.1.47/api/v0.5/").unwrap());
+
+        let (mut _fetcher, fetcher_api) = fetcher::Fetcher::new(client.clone());
+        let (mut _data_manager, data_manager_api) = data_manager::DataManager::new(fetcher_api);
+        let (mut contractor, contractor_api) = Contractor::new(client.clone(), data_manager_api);
 
         tokio::spawn(async move {
             contractor.run().await;
@@ -316,7 +382,7 @@ mod tests {
         let requester = tokio::spawn(async move { generate_job(&requester_client).await });
 
         let worker_id = register_worker(&client).await;
-        let handle = api.contract(worker_id).await;
+        let handle = contractor_api.contract(worker_id).await;
 
         let response = handle.response_receiver.await.unwrap();
 

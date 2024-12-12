@@ -1,6 +1,8 @@
 use std::sync::{atomic::AtomicU32, Arc};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::pleiades_type::{Job, JobStatus};
+
 /// Contractor
 ///
 ///
@@ -32,9 +34,7 @@ impl Updater {
             task_counter: Arc::new(AtomicU32::new(0)),
         };
 
-        let api = Api {
-            command_sender
-        };
+        let api = Api { command_sender };
 
         (updater, api)
     }
@@ -74,21 +74,47 @@ impl Updater {
     /// task
     ///
     async fn task_finish_job(client: Arc<pleiades_api::Client>, request: finish::Request) {
-        let update_request = pleiades_api::api::job::update::Request::builder()
-            .job_id(request.job_id)
-            .data_id(request.output_id)
-            .status("finished")
-            .build();
+        match request.job.status {
+            JobStatus::Finished(output) => {
+                let upload_request = pleiades_api::api::data::upload::Request::builder()
+                    .data(output)
+                    .build();
 
-        let update_request = client.call_api(&update_request).await;
+                let upload_response = client
+                    .call_api(&upload_request)
+                    .await
+                    .expect("no error handling: upload");
 
-        let _update_request = update_request.expect("no error handling: update job");
-        // don't check error handling
+                let update_request = pleiades_api::api::job::update::Request::builder()
+                    .job_id(request.job.id)
+                    .data_id(upload_response.data_id)
+                    .status("finished")
+                    .build();
+
+                let _update_response = client
+                    .call_api(&update_request)
+                    .await
+                    .expect("no error handling: update");
+            }
+            JobStatus::Cancelled => {
+                let update_request = pleiades_api::api::job::update::Request::builder()
+                    .job_id(request.job.id)
+                    .data_id("0")
+                    .status("cancelled")
+                    .build();
+
+                let _update_response = client
+                    .call_api(&update_request)
+                    .await
+                    .expect("no error handling: update");
+            }
+            _ => {}
+        };
 
         request
             .response_sender
             .send(finish::Response {})
-            .expect("updater");
+            .expect("no error handling: updater");
     }
 
     /// wait_for_shutdown
@@ -117,13 +143,12 @@ pub struct Api {
 impl Api {
     /// get_blob
     ///
-    pub async fn finish_job(&self, job_id: String, output_id: String) -> finish::Handle {
+    pub async fn update_job(&self, job: Job) -> finish::Handle {
         let (response_sender, response_receiver) = oneshot::channel();
 
         let request = Command::FinishJob(finish::Request {
             response_sender,
-            job_id,
-            output_id,
+            job,
         });
 
         self.command_sender.send(request).await.unwrap();
@@ -142,8 +167,7 @@ pub mod finish {
 
     pub struct Request {
         pub response_sender: oneshot::Sender<Response>,
-        pub job_id: String,
-        pub output_id: String,
+        pub job: Job,
     }
 
     #[derive(Debug)]
@@ -191,7 +215,7 @@ pub mod finish {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contractor::Contractor;
+    use crate::{contractor::Contractor, data_manager::DataManager, fetcher::Fetcher};
 
     async fn register_worker(client: &Arc<pleiades_api::Client>) -> String {
         let request = pleiades_api::api::worker::register::Request::builder()
@@ -284,14 +308,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_contract() {
-        let client = Arc::new(pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap());
-        let (mut contractor, api) = Contractor::new(client.clone());
+        let client =
+            Arc::new(pleiades_api::Client::try_new("http://192.168.1.47/api/v0.5/").unwrap());
+
+        let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
+        let (mut data_manager, data_manager_api) = DataManager::new(fetcher_api);
+        let (mut contractor, api) = Contractor::new(client.clone(), data_manager_api);
         let (mut updater, _updater_api) = Updater::new(client.clone());
 
         tokio::spawn(async move {
+            fetcher.run().await;
+        });
+        tokio::spawn(async move { data_manager.run().await });
+        tokio::spawn(async move {
             contractor.run().await;
         });
-
         tokio::spawn(async move {
             updater.run().await;
         });
@@ -300,9 +331,9 @@ mod tests {
         let requester = tokio::spawn(async move { generate_job(&requester_client).await });
 
         let worker_id = register_worker(&client).await;
-        let mut handle = api.contract(worker_id).await;
+        let handle = api.contract(worker_id).await;
 
-        let response = handle.recv_nowait().unwrap();
+        let response = handle.recv().await;
 
         println!("{:?}", response);
         assert!(response.contracted.is_some());

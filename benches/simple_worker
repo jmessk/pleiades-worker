@@ -10,7 +10,7 @@ use pleiades_worker::{
 
 #[tokio::main]
 async fn main() {
-    let client = pleiades_api::Client::new("http://master.local/api/v0.5/").unwrap();
+    let client = pleiades_api::Client::try_new("http://master.local/api/v0.5/").unwrap();
     let client = Arc::new(client);
 
     // components

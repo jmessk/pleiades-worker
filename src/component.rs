@@ -1,9 +1,12 @@
+use std::future::Future;
+
 pub trait Component {
     type Request: Request;
     type Response: Response;
     type Api: Api;
 
     fn api(&self) -> Self::Api;
+    fn run(&self) -> impl Future<Output = ()>;
 }
 
 pub trait Api {
