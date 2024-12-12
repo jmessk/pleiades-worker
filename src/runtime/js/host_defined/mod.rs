@@ -1,5 +1,6 @@
 pub mod blob;
-mod user;
+pub mod command;
+pub mod user;
 
 pub use user::{UserInput, UserOutput};
 

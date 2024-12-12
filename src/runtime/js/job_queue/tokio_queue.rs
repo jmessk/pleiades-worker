@@ -31,11 +31,14 @@ impl JobQueue for TokioJobQueue {
     }
 
     fn run_jobs(&self, context: &mut Context) {
-        while let Some(job) = self.jobs.borrow_mut().pop_front() {
+        let mut next_job = self.jobs.borrow_mut().pop_front();
+        while let Some(job) = next_job {
             if job.call(context).is_err() {
                 self.jobs.borrow_mut().clear();
                 return;
             };
+
+            next_job = self.jobs.borrow_mut().pop_front();
         }
     }
 

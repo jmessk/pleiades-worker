@@ -1,10 +1,15 @@
-pub mod runtime_thread;
+use std::fmt::Debug;
+
+use crate::types::{Job, JobStatus};
+
 pub mod js;
 pub mod python;
 
-pub trait Context {}
-
 pub trait Runtime {
-    fn init(&mut self);
-    fn run(&mut self, input: &str);
+    fn init() -> Self;
+    fn process(&mut self, job: Job) -> Job;
+}
+
+pub trait Context {
+    fn init(job: &Job) -> Self;
 }

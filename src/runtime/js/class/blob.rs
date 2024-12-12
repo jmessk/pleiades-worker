@@ -98,10 +98,26 @@ impl Blob {
 
     pub fn get_async(
         _this: &JsValue,
-        _args: &[JsValue],
-        _context: &mut Context,
+        args: &[JsValue],
+        context: &mut Context,
     ) -> impl Future<Output = JsResult<JsValue>> {
+        println!("Blob.get_async: called: {:?}", args);
+
+        // let blob_id = match args.first() {
+        //     Some(blob_id) => blob_id.to_string(context)?.to_std_string_escaped(),
+        //     None => {
+        //         return Err(JsError::from_native(
+        //             JsNativeError::error().with_message("Blob.get: blob_id is required"),
+        //         ))
+        //     }
+        // };
+
+        // // Create a request object and insert it into the context
+        // host_defined::blob::get::Request { blob_id }.insert_to_context(context);
+        // println!("Blob.get: request inserted into context");
+
         async {
+            println!("Blob.get_async: executor called");
             let output = js_string!("blob_async");
             Ok(output.into())
         }

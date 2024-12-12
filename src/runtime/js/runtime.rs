@@ -1,257 +1,58 @@
-use boa_engine::property::Attribute;
-use boa_engine::{js_string, Context, JsResult, Module, NativeFunction, Source};
-use boa_runtime::Console;
-use bytes::Bytes;
-use std::rc::Rc;
+use crate::runtime::{js, Context, Runtime};
+use crate::types::{Job, JobStatus, RuntimeContext, RuntimeRequest};
 
-use crate::runtime::js::{host_defined, job_queue, module};
-use crate::types::Job;
+use super::host_defined::HostDefined as _;
 
-// #[derive(Default)]
-pub struct Runtime {
-    pub context: Context,
-    job: Job,
-}
+pub struct JsRuntime {}
 
-impl Runtime {
-    pub fn new(job: Job) -> Self {
-        let mut runtime = Self {
-            context: Self::init_context(),
-            job,
+impl Runtime for JsRuntime {
+    fn init() -> Self {
+        Self {}
+    }
+
+    fn process(&mut self, mut job: Job) -> Job {
+        let status = job.status;
+
+        // set job status to running
+        job.status = JobStatus::Running;
+
+        let mut context = match status {
+            JobStatus::Assigned => js::JsContext::init(&job),
+            JobStatus::Ready {
+                context: RuntimeContext::JavaScript(mut context),
+                response,
+            } => {
+                context.set_response(response);
+                context
+            }
+            _ => {
+                println!("Invalid job status: {:?}", job.status);
+                job.status = JobStatus::Cancelled;
+
+                return job;
+            }
         };
 
-        // builtin
-        runtime.register_builtin_properties();
-        runtime.register_builtin_classes();
-        runtime.register_builtin_functions();
-        runtime.register_builtin_modules();
+        // check if there is a request in the context
+        if let Some(request) = RuntimeRequest::get_from_context(&context.context) {
+            job.status = JobStatus::Waiting {
+                context: RuntimeContext::JavaScript(context),
+                request,
+            };
 
-        // user-defined
-        runtime.register_user_defined_functions().unwrap();
-        runtime.register_user_input();
-        runtime.register_entrypoint();
-
-        runtime
-    }
-
-    fn init_context() -> Context {
-        Context::builder()
-            // .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
-            .job_queue(Rc::new(job_queue::SyncJobQueue::new()))
-            .module_loader(Rc::new(module::CustomModuleLoader::new()))
-            .build()
-            .unwrap()
-    }
-
-    fn register_builtin_properties(&mut self) {
-        let console = Console::init(&mut self.context);
-
-        self.context
-            .register_global_property(js_string!(Console::NAME), console, Attribute::all())
-            .unwrap();
-    }
-
-    fn register_builtin_classes(&mut self) {
-        use super::class;
-
-        self.context.register_global_class::<class::Blob>().unwrap();
-        self.context.register_global_class::<class::Nn>().unwrap();
-        self.context
-            .register_global_class::<class::HttpClient>()
-            .unwrap();
-    }
-
-    fn register_builtin_functions(&mut self) {
-        use super::function;
-
-        self.context
-            .register_global_builtin_callable(
-                js_string!("getUserInput"),
-                0,
-                NativeFunction::from_fn_ptr(function::get_user_input),
-            )
-            .unwrap();
-
-        self.context
-            .register_global_builtin_callable(
-                js_string!("setUserOutput"),
-                1,
-                NativeFunction::from_fn_ptr(function::set_user_output),
-            )
-            .unwrap();
-    }
-
-    fn register_builtin_modules(&mut self) {
-        let pleiades = module::pleiades::get_module(&mut self.context);
-
-        self.context
-            .module_loader()
-            .register_module(js_string!("pleiades"), pleiades);
-    }
-
-    /// ## Register user-defined function
-    ///
-    /// - The shape of user-defined function is as follows:
-    ///
-    /// ```js
-    /// import { blob } from "pleiades"
-    ///
-    /// async function fetch(job) {
-    ///     const inputData = blob.get(job.input.id);
-    ///  
-    ///    return "output";
-    /// }
-    ///
-    /// export default fetch;
-    /// ```
-    fn register_user_defined_functions(&mut self) -> JsResult<()> {
-        let source = Source::from_bytes(&self.job.lambda.code.data);
-        let module = Module::parse(source, None, &mut self.context)?;
-
-        self.context
-            .module_loader()
-            .register_module(js_string!("user"), module);
-
-        Ok(())
-    }
-
-    fn register_user_input(&mut self) {
-        self.context
-            .realm()
-            .host_defined_mut()
-            .insert(host_defined::UserInput {
-                id: self.job.input.id.clone(),
-                data: self.job.input.data.clone(),
-            });
-    }
-
-    fn register_entrypoint(&mut self) {
-        let entry_point = r#"
-            import fetch from "user";
-
-            let job = getUserInput();
-            setUserOutput(await fetch(job));
-        "#;
-
-        let source = Source::from_bytes(entry_point);
-        let module = Module::parse(source, None, &mut self.context).unwrap();
-
-        let _ = module.load_link_evaluate(&mut self.context);
-    }
-
-    pub fn step(&mut self) {
-        // self.context.run_jobs();
-        // context.run_jobs_async().await;
-        // self.context
-        //     .eval(Source::from_bytes("setOutput('inner eval')"))
-        //     .unwrap();
-        self.context.job_queue().run_jobs(&mut self.context);
-    }
-
-    pub fn output(&mut self) -> Option<Bytes> {
-        let output_object = self.context.realm().host_defined();
-        let output = output_object.get::<host_defined::UserOutput>();
-
-        match output {
-            Some(output) => output.data.clone(),
-            None => None,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use host_defined::HostDefined;
-
-    use super::*;
-    use crate::types;
-
-    fn generate_sample_job(code: &'static str) -> Job {
-        Job {
-            id: "11111".into(),
-            status: types::JobStatus::Assigned,
-            lambda: types::Lambda {
-                id: "22222".into(),
-                code: types::Blob {
-                    id: "33333".into(),
-                    data: code.into(),
-                },
-            },
-            input: types::Blob {
-                id: "44444".into(),
-                data: "this_is_input_data".into(),
-            },
-        }
-    }
-
-    #[test]
-    fn test_class() {
-        let code = r#"
-        import { blob } from "pleiades"
-
-        async function fetch(job) {
-            let someData = await blob.get(job);
-            console.log(someData);
-
-            return "test_output"; 
+            return job;
         }
 
-        export default fetch;
-    "#;
-
-        let job = generate_sample_job(code);
-
-        let mut runtime = Runtime::new(job);
-
-        runtime.step();
-        runtime.step();
-        let output = runtime.output();
-
-        assert_eq!(output, Some("test_output".into()));
-    }
-
-    #[test]
-    fn test_output() {
-        let code = r#"
-        import { blob } from "pleiades"
-
-        async function fetch(job) {
-            // let someData = blob.get(job);
-            // console.log(someData);
-            // console.log(await someData);
-
-            // return "test_output"; 
-
-            new Promise((resolve) => {
-                console.log("Promise called");
-            }).then(() => {
-                console.log("Promise resolved");
-                resolve("test_output");
-            });
+        // check if the job is finished
+        match context.get_output() {
+            Some(output) => {
+                job.status = JobStatus::Finished(output);
+            }
+            None => {
+                job.status = JobStatus::Cancelled;
+            }
         }
 
-        export default fetch;
-    "#;
-
-        let job = generate_sample_job(code);
-
-        let mut runtime = Runtime::new(job);
-
-        // runtime.step();
-
-        use crate::runtime::js::host_defined::blob;
-        blob::get::Response {
-            data: Bytes::from("test_output"),
-        }
-        .insert_to_context(&mut runtime.context);
-
-        runtime.step();
-
-        println!("**********");
-
-        runtime.step();
-        let output = runtime.output();
-
-        assert_eq!(output, Some("test_output".into()));
+        job
     }
 }

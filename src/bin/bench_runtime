@@ -31,7 +31,7 @@ fn new_job() -> types::Job {
         status: types::JobStatus::Assigned,
         lambda: types::Lambda {
             id: "22222".to_string(),
-            code: types::Blob {
+            data: types::Blob {
                 id: "33333".to_string(),
                 data: bytes::Bytes::from(CODE),
             },
