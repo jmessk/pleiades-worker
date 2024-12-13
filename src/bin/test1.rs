@@ -2,8 +2,23 @@ use boa_engine::{Context, JsArgs, JsResult, JsValue, Source, NativeFunction};
 
 fn main() -> JsResult<()> {
   let js_code = r#"
+    function say_hello_a(name) {
+      say_hello("Hello " + name);
+    }
+
+    async function say_hello_p(name) {
+      say_hello("Hello " + name);
+    }
+
     say_hello("World");
+    say_hello_a("sub");
     say_hello();
+
+    new Promise(async (resolve) => {
+      say_hello("Promise");
+      await say_hello_p("Promise await");
+      resolve();
+    });
   "#;
 
   // Instantiate the execution context
@@ -12,6 +27,7 @@ fn main() -> JsResult<()> {
 
 
   let result = context.eval(Source::from_bytes(js_code))?;
+  context.run_jobs();
   println!("{}", result.display());
 
   Ok(())

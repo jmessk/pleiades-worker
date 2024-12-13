@@ -16,7 +16,7 @@ async fn main() {
         .unwrap();
 
     let mut join_set = tokio::task::JoinSet::new();
-    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(1));
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(10));
 
     let start_outer = std::time::Instant::now();
 

@@ -35,7 +35,7 @@ impl Runtime for JsRuntime {
             }
             _ => {
                 println!("Invalid job status: {:?}", job.status);
-                job.status = JobStatus::Cancelled;
+                job.cancel();
 
                 return job;
             }

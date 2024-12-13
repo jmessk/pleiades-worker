@@ -17,16 +17,16 @@ async fn main() {
         Contractor::new(client.clone(), data_manager_api.clone(), 8);
     let (mut updater, updater_api) = Updater::new(client.clone(), data_manager_api);
 
-    tokio::spawn(async move {
+    let fetcher = tokio::spawn(async move {
         fetcher.run().await;
     });
-    tokio::spawn(async move {
+    let data_manager = tokio::spawn(async move {
         data_manager.run().await;
     });
-    tokio::spawn(async move {
+    let contractor = tokio::spawn(async move {
         contractor.run().await;
     });
-    tokio::spawn(async move {
+    let updater = tokio::spawn(async move {
         updater.run().await;
     });
 
@@ -43,6 +43,11 @@ async fn main() {
     // job_generator(client).await;
 
     updater_loop.await.unwrap();
+
+    fetcher.await.unwrap();
+    data_manager.await.unwrap();
+    contractor.await.unwrap();
+    updater.await.unwrap();
 }
 
 async fn register_worker(client: &Arc<pleiades_api::Client>) -> String {
@@ -92,7 +97,7 @@ async fn updater_loop(updater_api: updater::Api, mut job_receiver: mpsc::Receive
 
         tokio::spawn(async move {
             handle.recv().await;
-            // println!("job finished in {:?}", instant.elapsed());
+            println!("job finished in {:?}", instant.elapsed());
         });
     }
 }
