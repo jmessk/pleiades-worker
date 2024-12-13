@@ -61,7 +61,8 @@ impl Blob {
         println!("Blob.get: request inserted into context");
 
         // need to delete
-        RuntimeResponse::Blob(blob::Response::Get("test_insert".into())).insert_into_context(context);
+        RuntimeResponse::Blob(blob::Response::Get("test_insert".into()))
+            .insert_into_context(context);
 
         let executor = |resolvers: &ResolvingFunctions, context: &mut Context| {
             println!("Blob.get: executor called");
@@ -97,9 +98,9 @@ impl Blob {
     pub fn get_async(
         _this: &JsValue,
         args: &[JsValue],
-        _context: &mut Context,
+        context: &mut Context,
     ) -> impl Future<Output = JsResult<JsValue>> {
-        println!("Blob.get_async: called: {:?}", args);
+        println!("Blob.getAsync: called: {:?}", args);
 
         // let blob_id = match args.first() {
         //     Some(blob_id) => blob_id.to_string(context)?.to_std_string_escaped(),
@@ -110,14 +111,35 @@ impl Blob {
         //     }
         // };
 
-        // // Create a request object and insert it into the context
-        // host_defined::blob::get::Request { blob_id }.insert_to_context(context);
-        // println!("Blob.get: request inserted into context");
+        let blob_id = args
+            .first()
+            .unwrap()
+            .to_string(context)
+            .unwrap()
+            .to_std_string_escaped();
+
+        // Create a request object and insert it into the context
+        RuntimeRequest::Blob(blob::Request::Get(blob_id)).insert_into_context(context);
+        println!("Blob.getAsync: request inserted into context");
 
         async {
-            println!("Blob.get_async: executor called");
-            let output = js_string!("blob_async");
-            Ok(output.into())
+            // let response = RuntimeResponse::get_from_context(context);
+
+            // let result = match response {
+            //     Some(RuntimeResponse::Blob(blob::Response::Get(data))) => {
+            //         let array = JsUint8Array::from_iter(data, context).unwrap();
+            //         println!("Blob.getAsync: response found: {:?}", array);
+
+            //         JsValue::from(array)
+            //     }
+            //     _ => {
+            //         println!("Blob.getAsync: response not found");
+            //         JsValue::undefined()
+            //     }
+            // };
+
+            // Ok(result)
+            Ok(JsValue::undefined())
         }
     }
 }

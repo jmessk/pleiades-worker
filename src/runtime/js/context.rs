@@ -44,8 +44,8 @@ impl Context for JsContext {
 impl JsContext {
     fn init_context() -> boa_engine::Context {
         boa_engine::Context::builder()
-            .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
-            // .job_queue(Rc::new(job_queue::SyncJobQueue::new()))
+            // .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
+            .job_queue(Rc::new(job_queue::SyncJobQueue::new()))
             .module_loader(Rc::new(module::CustomModuleLoader::new()))
             .build()
             .unwrap()
@@ -127,6 +127,8 @@ impl JsContext {
         self.context.realm().host_defined_mut().insert(UserInput {
             data: job.input.data.clone(),
         });
+
+        self.context.host_hooks()
     }
 
     fn register_entrypoint(&mut self) {
@@ -197,7 +199,7 @@ mod tests {
         import { blob } from "pleiades"
 
         async function fetch(job) {
-            let someData = await blob.getAsync(job);
+            let someData = await blob.getAsync("12345");
             console.log(someData);
 
             return "test_output"; 
@@ -211,55 +213,20 @@ mod tests {
 
         let mut context = JsContext::init(&job);
 
-        // use crate::runtime::js::host_defined::blob;
-        // blob::get::Response {
-        //     data: Bytes::from("test_output"),
-        // }
-        // .insert_to_context(&mut context.context);
-
         context.step();
 
-        println!("**********");
-
-        context.step();
         let output = context.get_output();
 
         assert_eq!(output, Some("test_output".into()));
     }
 
-    #[tokio::test]
-    async fn test_tokio() {
-        let code = r#"
-        import { blob } from "pleiades"
-
-        async function fetch(job) {
-            let someData = await blob.getAsync(job);
-            console.log(someData);
-
-            return "test_output"; 
-        }
-
-        export default fetch;
-    "#;
+    #[test]
+    fn test_a() {
         let mut job = Job::default();
         job.lambda.code.data = code.into();
 
         let mut context = JsContext::init(&job);
 
-        // use crate::runtime::js::host_defined::blob;
-        // blob::get::Response {
-        //     data: Bytes::from("test_output"),
-        // }
-        // .insert_to_context(&mut context.context);
-
-        context.context.run_jobs_async().await;
-        // runtime.step();
-
-        println!("**********");
-
-        // runtime.step();
-        let output = context.get_output();
-
-        assert_eq!(output, Some("test_output".into()));
+        context.context.eva
     }
 }
