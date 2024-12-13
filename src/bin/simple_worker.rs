@@ -9,7 +9,7 @@ use tokio::{sync::mpsc, task::JoinSet};
 
 #[tokio::main]
 async fn main() {
-    let client = Arc::new(pleiades_api::Client::try_new("http://192.168.1.47/api/v0.5/").unwrap());
+    let client = Arc::new(pleiades_api::Client::try_new("http://pleiades.local/api/v0.5/").unwrap());
 
     let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
     let (mut data_manager, data_manager_api) = DataManager::new(fetcher_api);
@@ -40,7 +40,7 @@ async fn main() {
         updater_loop(updater_api, job_receiver).await;
     });
 
-    job_generator(client).await;
+    // job_generator(client).await;
 
     updater_loop.await.unwrap();
 }
@@ -92,7 +92,7 @@ async fn updater_loop(updater_api: updater::Api, mut job_receiver: mpsc::Receive
 
         tokio::spawn(async move {
             handle.recv().await;
-            println!("job finished in {:?}", instant.elapsed());
+            // println!("job finished in {:?}", instant.elapsed());
         });
     }
 }

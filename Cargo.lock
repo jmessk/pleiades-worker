@@ -1312,9 +1312,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 
 [[package]]
+name = "pleiades"
+version = "0.1.0"
+source = "git+https://git.dolylab.cc/mec/pleiades-rs.git?branch=dev#6c05a33f66d3afb68fd9b91b0e9a1a421f3f4cf8"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "pleiades-api",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "pleiades-api"
 version = "0.1.0"
-source = "git+https://git.dolylab.cc/mec/pleiades-rs.git?branch=dev#f77d557c279474b09b316fb57230f9d3224316a5"
+source = "git+https://git.dolylab.cc/mec/pleiades-rs.git?branch=dev#6c05a33f66d3afb68fd9b91b0e9a1a421f3f4cf8"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1337,6 +1350,7 @@ dependencies = [
  "boa_runtime",
  "bytes",
  "criterion",
+ "pleiades",
  "pleiades-api",
  "tokio",
 ]
