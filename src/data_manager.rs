@@ -12,7 +12,7 @@ use crate::pleiades_type::Blob;
 ///
 ///
 pub struct DataManager {
-    fetcher_api: fetcher::Api,
+    fetcher_controller: fetcher::Api,
 
     /// interface to access this component
     ///
@@ -30,19 +30,19 @@ impl DataManager {
     ///
     ///
     ///
-    pub fn new(fetcher_api: fetcher::Api) -> (Self, Api) {
+    pub fn new(fetcher_controller: fetcher::Api) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let data_manager = Self {
-            fetcher_api,
+            fetcher_controller,
             // command_sender: command_sender.clone(),
             command_receiver,
             task_counter: Arc::new(AtomicUsize::new(0)),
         };
 
-        let api = Api { command_sender };
+        let controller = Controller { command_sender };
 
-        (data_manager, api)
+        (data_manager, controller)
     }
 
     /// api
@@ -63,7 +63,7 @@ impl DataManager {
     ///
     pub async fn run(&mut self) {
         while let Some(request) = self.command_receiver.recv().await {
-            let fetcher_api = self.fetcher_api.clone();
+            let fetcher_api = self.fetcher_controller.clone();
             let task_counter = self.task_counter.clone();
 
             tokio::spawn(async move {
@@ -139,11 +139,11 @@ impl DataManager {
 ///
 ///
 #[derive(Clone)]
-pub struct Api {
+pub struct Controller {
     command_sender: mpsc::Sender<Command>,
 }
 
-impl Api {
+impl Controller {
     /// get_blob
     ///
     ///

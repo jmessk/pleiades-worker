@@ -59,7 +59,7 @@ impl Runtime for JsRuntime {
 
         match context.step() {
             Some(request) => {
-                job.status = JobStatus::Waiting {
+                job.status = JobStatus::Pending {
                     context: RuntimeContext::JavaScript(context),
                     request,
                 }
@@ -140,7 +140,7 @@ mod tests {
         // start processing the job
         let job = runtime.process(job);
 
-        if let JobStatus::Waiting {
+        if let JobStatus::Pending {
             context: _,
             request: RuntimeRequest::Blob(blob::Request::Get(blob_id)),
         } = job.status

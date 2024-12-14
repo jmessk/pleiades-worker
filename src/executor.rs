@@ -1,7 +1,9 @@
-use bytes::Bytes;
-use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicUsize, Arc};
-use tokio::sync::{mpsc, oneshot};
+use cpu_time::ThreadTime;
+use std::ops::{AddAssign, SubAssign};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Duration;
+use tokio::sync::mpsc;
 
 use crate::pleiades_type::{Job, JobStatus};
 use crate::runtime::{JsRuntime, Runtime as _};
@@ -19,8 +21,11 @@ pub struct Executor {
 
     /// updater
     ///
+    updater_controller: updater::Controller,
+
+    /// max_queueing_time
     ///
-    updater_api: updater::Api,
+    max_queueing_time: Arc<Mutex<Duration>>,
 
     /// runtime
     ///
@@ -34,18 +39,24 @@ impl Executor {
     ///
     ///
     ///
-    pub fn new(updater_api: updater::Api) -> (Self, Api) {
+    pub fn new(updater_controller: updater::Controller) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
+
+        let max_queueing_time = Arc::new(Mutex::new(Duration::from_secs(0)));
 
         let data_manager = Self {
             command_receiver,
-            updater_api,
+            updater_controller,
+            max_queueing_time: max_queueing_time.clone(),
             runtime: JsRuntime::init(),
         };
 
-        let api = Api { command_sender };
+        let controller = Controller {
+            command_sender,
+            max_queueing_time,
+        };
 
-        (data_manager, api)
+        (data_manager, controller)
     }
 
     /// run
@@ -62,21 +73,37 @@ impl Executor {
     }
 
     fn task_process_job(&mut self, request: enqueue::Request) {
-        let job = request.job;
+        let job_remaining_time = request.job.remaining_time;
 
-        // execute job with runtime
-        let processed_job = self.runtime.process(job);
+        let processed_job = {
+            // start measuring time
+            let start = ThreadTime::now();
+
+            // execute job with runtime
+            let mut processed_job = self.runtime.process(request.job);
+
+            // stop measuring time
+            processed_job.sub_remaining_time(start.elapsed());
+
+            processed_job
+        };
+
+        {
+            // update max_queueing_time
+            self.max_queueing_time
+                .lock()
+                .unwrap()
+                .sub_assign(job_remaining_time);
+        }
 
         match processed_job.status {
             JobStatus::Finished(_) | JobStatus::Cancelled => {
-                self.updater_api.update_job_nowait(processed_job);
+                self.updater_controller.update_job_nowait(processed_job);
             }
-            JobStatus::Waiting { context: _, request } => {
-                
-
-
-
-
+            JobStatus::Pending {
+                context: _,
+                request,
+            } => {
                 todo!()
             }
             _ => {}
@@ -90,19 +117,36 @@ impl Executor {
 ///
 ///
 #[derive(Clone)]
-pub struct Api {
+pub struct Controller {
     command_sender: mpsc::Sender<Command>,
+    max_queueing_time: Arc<Mutex<Duration>>,
 }
 
-impl Api {
+impl Controller {
     /// get_blob
     ///
     ///
     ///
     ///
     pub async fn enqueue(&self, job: Job) {
+        {
+            self.max_queueing_time
+                .lock()
+                .unwrap()
+                .add_assign(job.remaining_time);
+        }
+
         let request = Command::Enqueue(enqueue::Request { job });
         self.command_sender.send(request).await.unwrap();
+    }
+
+    /// get_max_queueing_time
+    ///
+    ///
+    ///
+    ///
+    pub fn get_max_queueing_time(&self) -> Duration {
+        *self.max_queueing_time.lock().unwrap()
     }
 }
 

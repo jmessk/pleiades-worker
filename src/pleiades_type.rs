@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::runtime::{RuntimeContext, RuntimeRequest, RuntimeResponse};
 
@@ -58,24 +58,19 @@ impl Default for Lambda {
 #[derive(Debug, Default)]
 pub struct Job {
     pub status: JobStatus,
-    pub time_counter: Duration,
-    pub deadline: Duration,
+    pub remaining_time: Duration,
     pub id: String,
     pub lambda: Lambda,
     pub input: Blob,
 }
 
 impl Job {
-    pub fn start_timer(&mut self) -> Instant {
-        Instant::now()
-    }
-
-    pub fn stop_timer_and_check_timeout(&mut self, start: Instant) {
-        self.time_counter += start.elapsed();
+    pub fn sub_remaining_time(&mut self, duration: Duration) {
+        self.remaining_time -= duration;
     }
 
     pub fn is_timeout(&self) -> bool {
-        self.time_counter >= self.deadline
+        self.remaining_time <= Duration::from_secs(0)
     }
 
     pub fn cancel(&mut self) {
@@ -92,7 +87,7 @@ pub enum JobStatus {
         context: RuntimeContext,
         response: RuntimeResponse,
     },
-    Waiting {
+    Pending {
         context: RuntimeContext,
         request: RuntimeRequest,
     },

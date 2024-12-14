@@ -2,7 +2,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 use crate::{
     data_manager,
@@ -19,7 +19,7 @@ pub struct Updater {
 
     /// data manager api
     ///
-    data_manager_api: data_manager::Api,
+    data_manager_controller: data_manager::Controller,
 
     /// interface to access this component
     ///
@@ -36,20 +36,20 @@ impl Updater {
     ///
     pub fn new(
         client: Arc<pleiades_api::Client>,
-        data_manager_api: data_manager::Api,
-    ) -> (Self, Api) {
+        data_manager_controller: data_manager::Controller,
+    ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let updater = Self {
             client,
-            data_manager_api,
+            data_manager_controller,
             command_receiver,
             task_counter: Arc::new(AtomicUsize::new(0)),
         };
 
-        let api = Api { command_sender };
+        let controller = Controller { command_sender };
 
-        (updater, api)
+        (updater, controller)
     }
 
     /// api
@@ -66,7 +66,7 @@ impl Updater {
         while let Some(request) = self.command_receiver.recv().await {
             // clone fields to bind
             let client = self.client.clone();
-            let data_manager_api = self.data_manager_api.clone();
+            let data_manager_api = self.data_manager_controller.clone();
             let task_counter = self.task_counter.clone();
 
             // new task
@@ -90,7 +90,7 @@ impl Updater {
     ///
     async fn task_update_job(
         client: Arc<pleiades_api::Client>,
-        data_manager_api: data_manager::Api,
+        data_manager_api: data_manager::Controller,
         request: update::Request,
     ) {
         match request.job.status {
@@ -146,11 +146,11 @@ impl Updater {
 ///
 ///
 #[derive(Clone)]
-pub struct Api {
+pub struct Controller {
     command_sender: mpsc::Sender<Command>,
 }
 
-impl Api {
+impl Controller {
     /// get_blob
     ///
     pub async fn update_job(&self, job: Job) {

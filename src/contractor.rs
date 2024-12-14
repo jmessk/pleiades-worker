@@ -16,7 +16,7 @@ pub struct Contractor {
 
     /// data manager api
     ///
-    data_manager_api: data_manager::Api,
+    data_manager_controller: data_manager::Controller,
 
     /// interface to access this component
     ///
@@ -32,22 +32,22 @@ impl Contractor {
     ///
     pub fn new(
         client: Arc<pleiades_api::Client>,
-        data_manager_api: data_manager::Api,
+        data_manager_controller: data_manager::Controller,
         max_concurrency: usize,
-    ) -> (Self, Api) {
+    ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(8);
 
         let contractor = Self {
             client,
-            data_manager_api,
+            data_manager_controller,
             command_receiver,
             semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrency)),
             max_concurrency,
         };
 
-        let api = Api { command_sender };
+        let controller = Controller { command_sender };
 
-        (contractor, api)
+        (contractor, controller)
     }
 
     // pub fn api(&self) -> Api {
@@ -65,7 +65,7 @@ impl Contractor {
     pub async fn run(&mut self) {
         while let Some(request) = self.command_receiver.recv().await {
             let client = self.client.clone();
-            let data_manager_api = self.data_manager_api.clone();
+            let data_manager_api = self.data_manager_controller.clone();
             let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
             tokio::spawn(async move {
@@ -88,7 +88,7 @@ impl Contractor {
     ///
     async fn task_contract(
         client: Arc<pleiades_api::Client>,
-        data_manager_api: data_manager::Api,
+        data_manager_api: data_manager::Controller,
         request: contract::Request,
     ) {
         // Fetch a new job
@@ -157,8 +157,7 @@ impl Contractor {
         let job = Job {
             id: job_id,
             status: JobStatus::Assigned,
-            time_counter: Duration::default(),
-            deadline: Duration::from_millis(100),
+            remaining_time: Duration::from_secs(0),
             lambda: Lambda {
                 id: job_info.lambda.lambda_id,
                 runtime: job_info.lambda.runtime,
@@ -198,11 +197,11 @@ impl Contractor {
 ///
 ///
 #[derive(Clone)]
-pub struct Api {
+pub struct Controller {
     command_sender: mpsc::Sender<Command>,
 }
 
-impl Api {
+impl Controller {
     /// contract
     ///
     pub async fn try_contract(&self, worker_id: String) -> anyhow::Result<contract::Handle> {

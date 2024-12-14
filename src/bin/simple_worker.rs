@@ -63,7 +63,7 @@ async fn register_worker(client: &Arc<pleiades_api::Client>) -> String {
 }
 
 async fn loop_contractor(
-    contractor_api: contractor::Api,
+    contractor_api: contractor::Controller,
     worker_id: String,
     job_sender: mpsc::Sender<(Job, Instant)>,
 ) {
@@ -91,7 +91,7 @@ async fn loop_contractor(
     join_set.join_all().await;
 }
 
-async fn updater_loop(updater_api: updater::Api, mut job_receiver: mpsc::Receiver<(Job, Instant)>) {
+async fn updater_loop(updater_api: updater::Controller, mut job_receiver: mpsc::Receiver<(Job, Instant)>) {
     while let Some((mut job, instant)) = job_receiver.recv().await {
         job.status = JobStatus::Finished(Some(Bytes::from("output")));
 
