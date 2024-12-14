@@ -4,6 +4,7 @@ pub mod function;
 pub mod host_defined;
 pub mod job_queue;
 pub mod module;
+mod context_old;
 
 pub use context::JsContext;
 
@@ -12,73 +13,73 @@ use crate::runtime::{js, Context, Runtime, RuntimeContext};
 
 pub struct JsRuntime {}
 
-impl Runtime for JsRuntime {
-    fn init() -> Self {
-        Self {}
-    }
+// impl Runtime for JsRuntime {
+//     fn init() -> Self {
+//         Self {}
+//     }
 
-    fn process(&mut self, mut job: Job) -> Job {
-        let status = job.status;
+//     fn process(&mut self, mut job: Job) -> Job {
+//         let status = job.status;
 
-        // set job status to running
-        job.status = JobStatus::Running;
+//         // set job status to running
+//         job.status = JobStatus::Running;
 
-        // get the context from the job status
-        let mut context = match status {
-            JobStatus::Assigned => js::JsContext::init(&job),
-            JobStatus::Ready {
-                context: RuntimeContext::JavaScript(mut context),
-                response,
-            } => {
-                context.set_response(response);
-                context
-            }
-            _ => {
-                println!("Invalid job status: {:?}", job.status);
-                job.cancel();
+//         // get the context from the job status
+//         let mut context = match status {
+//             JobStatus::Assigned => js::JsContext::init(),
+//             JobStatus::Ready {
+//                 context: RuntimeContext::JavaScript(mut context),
+//                 response,
+//             } => {
+//                 context.set_response(response);
+//                 context
+//             }
+//             _ => {
+//                 println!("Invalid job status: {:?}", job.status);
+//                 job.cancel();
 
-                return job;
-            }
-        };
+//                 return job;
+//             }
+//         };
 
-        match context.step() {
-            Some(request) => {
-                job.status = JobStatus::Waiting {
-                    context: RuntimeContext::JavaScript(context),
-                    request,
-                }
-            }
-            None => match context.get_output() {
-                Some(output) => job.status = JobStatus::Finished(output),
-                None => job.status = JobStatus::Finished("".into()),
-            },
-        }
+//         match context.step() {
+//             Some(request) => {
+//                 job.status = JobStatus::Waiting {
+//                     context: RuntimeContext::JavaScript(context),
+//                     request,
+//                 }
+//             }
+//             None => match context.get_output() {
+//                 Some(output) => job.status = JobStatus::Finished(output),
+//                 None => job.status = JobStatus::Finished("".into()),
+//             },
+//         }
 
-        job
-    }
-}
+//         job
+//     }
+// }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[test]
-    fn test_runtime() {
-        let code = r#"
-            async function fetch(input) {
-                console.log(input);
+//     #[test]
+//     fn test_runtime() {
+//         let code = r#"
+//             async function fetch(input) {
+//                 console.log(input);
 
-                return input;
-            }
+//                 return input;
+//             }
 
-            // export default fetch;
-        "#;
+//             // export default fetch;
+//         "#;
 
-        let mut job = Job::default();
-        job.lambda.code.data = code.into();
+//         let mut job = Job::default();
+//         job.lambda.code.data = code.into();
 
-        let mut runtime = JsRuntime::init();
+//         let mut runtime = JsRuntime::init();
 
-        runtime.process(job);
-    }
-}
+//         runtime.process(job);
+//     }
+// }

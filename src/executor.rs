@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::runtime::{js::JsRuntime, Runtime};
+use crate::runtime::{JsRuntime, Runtime};
 use crate::pleiades_type::Job;
 
 pub struct Executor {
@@ -9,17 +9,17 @@ pub struct Executor {
     runtime: JsRuntime,
 }
 
-impl Default for Executor {
-    fn default() -> Self {
-        let (tx, rx) = mpsc::channel(8);
+// impl Default for Executor {
+//     fn default() -> Self {
+//         let (tx, rx) = mpsc::channel(8);
 
-        Self {
-            tx,
-            rx,
-            runtime: JsRuntime::init(),
-        }
-    }
-}
+//         Self {
+//             tx,
+//             rx,
+//             runtime: JsRuntime::init(),
+//         }
+//     }
+// }
 
 impl Executor {
     pub fn run(self) {

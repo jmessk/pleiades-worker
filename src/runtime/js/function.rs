@@ -10,7 +10,7 @@ pub fn get_user_input(
     _args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    UserInput::get_from_context(context)
+    UserInput::get_from_context(context.realm())
         .map(|input| {
             let array = JsUint8Array::from_iter(input.data, context)?;
             Ok(JsValue::from(array))
@@ -41,7 +41,7 @@ pub fn set_user_output(
     //     .realm()
     //     .host_defined_mut()
     //     .insert(host_defined::user_output::UserOutput { data });
-    UserOutput { data }.insert_into_context(context);
+    UserOutput { data }.insert_into_context(context.realm());
 
     Ok(JsValue::undefined())
 }

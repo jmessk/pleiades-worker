@@ -3,8 +3,10 @@ use std::fmt::Debug;
 
 use crate::pleiades_type::Job;
 
-pub mod js;
-pub mod python;
+mod js;
+mod python;
+
+pub use js::JsRuntime;
 
 pub trait Runtime {
     fn init() -> Self;
@@ -12,7 +14,7 @@ pub trait Runtime {
 }
 
 pub trait Context {
-    fn init(job: &Job) -> Self;
+    fn init() -> Self;
 }
 
 #[derive(Debug)]

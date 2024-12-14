@@ -1,6 +1,6 @@
 pub mod user;
 
-use boa_engine::{Context, JsData, NativeObject};
+use boa_engine::{realm::Realm, JsData, NativeObject};
 use boa_gc::{empty_trace, Finalize, Trace};
 
 use crate::runtime::{RuntimeRequest, RuntimeResponse};
@@ -10,19 +10,19 @@ pub trait HostDefined
 where
     Self: Sized + Finalize + JsData + NativeObject,
 {
-    fn insert_into_context(self, context: &mut Context) -> Option<Box<Self>> {
-        context.realm().host_defined_mut().insert(self)
+    fn insert_into_context(self, realm: &Realm) -> Option<Box<Self>> {
+        realm.host_defined_mut().insert(self)
     }
 
-    fn get_from_context(context: &Context) -> Option<Self>;
+    fn get_from_context(realm: &Realm) -> Option<Self>;
 
-    fn exists_in_context(context: &Context) -> bool {
-        let host_defined = context.realm().host_defined();
+    fn exists_in_context(realm: &Realm) -> bool {
+        let host_defined = realm.host_defined();
         host_defined.has::<Self>()
     }
 
-    fn remove_from_context(context: &mut Context) -> Option<Box<Self>> {
-        let mut host_defined = context.realm().host_defined_mut();
+    fn remove_from_context(realm: &Realm) -> Option<Box<Self>> {
+        let mut host_defined = realm.host_defined_mut();
         host_defined.remove::<Self>()
     }
 }
@@ -34,8 +34,8 @@ unsafe impl Trace for RuntimeRequest {
 }
 
 impl HostDefined for RuntimeRequest {
-    fn get_from_context(context: &boa_engine::Context) -> Option<Self> {
-        context.realm().host_defined().get::<Self>().cloned()
+    fn get_from_context(realm: &Realm) -> Option<Self> {
+        realm.host_defined().get::<Self>().cloned()
     }
 }
 
@@ -46,7 +46,7 @@ unsafe impl Trace for RuntimeResponse {
 }
 
 impl HostDefined for RuntimeResponse {
-    fn get_from_context(context: &boa_engine::Context) -> Option<Self> {
-        context.realm().host_defined().get::<Self>().cloned()
+    fn get_from_context(realm: &Realm) -> Option<Self> {
+        realm.host_defined().get::<Self>().cloned()
     }
 }
