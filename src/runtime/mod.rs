@@ -33,7 +33,7 @@ pub enum RuntimeContext {
 pub enum RuntimeRequest {
     Gpu(gpu::Request),
     Blob(blob::Request),
-    Http(http::Response),
+    Http(http::Request),
 }
 
 /// RuntimeResponse
@@ -82,7 +82,7 @@ pub mod http {
     use super::*;
 
     #[derive(Debug, Clone)]
-    pub enum Command {
+    pub enum Request {
         Get(String),
         Post(Bytes),
     }

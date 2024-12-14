@@ -59,6 +59,7 @@ impl Default for Lambda {
 pub struct Job {
     pub status: JobStatus,
     pub remaining_time: Duration,
+    // pub context: Option<RuntimeContext>
     pub id: String,
     pub lambda: Lambda,
     pub input: Blob,

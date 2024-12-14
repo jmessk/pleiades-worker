@@ -84,18 +84,25 @@ impl Fetcher {
 
         let download_response = client.call_api(&download_request).await;
 
-        let download_response = download_response.expect("no error handling: download blob");
-        // don't check error handling
-
-        request
-            .response_sender
-            .send(download_blob::Response {
-                blob: Blob {
-                    id: request.blob_id,
-                    data: download_response.data,
-                },
-            })
-            .expect("fetcher");
+        match download_response {
+            Ok(response) => {
+                request
+                    .response_sender
+                    .send(download_blob::Response {
+                        blob: Some(Blob {
+                            id: request.blob_id,
+                            data: response.data,
+                        }),
+                    })
+                    .expect("fetcher");
+            }
+            Err(_) => {
+                request
+                    .response_sender
+                    .send(download_blob::Response { blob: None })
+                    .expect("fetcher");
+            }
+        }
     }
 
     /// task
@@ -197,7 +204,7 @@ pub mod download_blob {
 
     #[derive(Debug)]
     pub struct Response {
-        pub blob: Blob,
+        pub blob: Option<Blob>,
     }
 
     pub struct Handle {
@@ -266,6 +273,6 @@ mod tests {
         let handle = api.download_blob(response.blob.id).await;
         let response = handle.recv().await;
 
-        assert_eq!(response.blob.data, data);
+        assert_eq!(response.blob.unwrap().data, data);
     }
 }

@@ -88,11 +88,13 @@ impl DataManager {
     ///
     async fn task_get_blob(fetcher_api: fetcher::Api, request: get_blob::Request) {
         let download_handle = fetcher_api.download_blob(request.blob_id).await;
-        let blob = download_handle.recv().await.blob;
+        let response = download_handle.recv().await;
 
         request
             .response_sender
-            .send(get_blob::Response { blob })
+            .send(get_blob::Response {
+                blob: response.blob,
+            })
             .expect("fetcher");
     }
 
@@ -207,7 +209,7 @@ pub mod get_blob {
 
     #[derive(Debug)]
     pub struct Response {
-        pub blob: Blob,
+        pub blob: Option<Blob>,
     }
 
     pub struct Handle {
@@ -290,6 +292,6 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         let response = handle.recv_nowait().unwrap();
 
-        assert_eq!(response.blob.data, data);
+        assert_eq!(response.blob.unwrap().data, data);
     }
 }

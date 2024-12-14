@@ -161,9 +161,9 @@ impl Contractor {
             lambda: Lambda {
                 id: job_info.lambda.lambda_id,
                 runtime: job_info.lambda.runtime,
-                code,
+                code: code.expect("contractor: code"),
             },
-            input,
+            input: input.expect("contractor: input"),
         };
 
         request
