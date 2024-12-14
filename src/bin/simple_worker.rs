@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Instant};
 
+use bytes::Bytes;
 use pleiades_worker::{
     contractor,
     pleiades_type::{Job, JobStatus},
@@ -9,7 +10,8 @@ use tokio::{sync::mpsc, task::JoinSet};
 
 #[tokio::main]
 async fn main() {
-    let client = Arc::new(pleiades_api::Client::try_new("http://pleiades.local/api/v0.5/").unwrap());
+    let client =
+        Arc::new(pleiades_api::Client::try_new("http://pleiades.local/api/v0.5/").unwrap());
 
     let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
     let (mut data_manager, data_manager_api) = DataManager::new(fetcher_api);
@@ -91,7 +93,7 @@ async fn loop_contractor(
 
 async fn updater_loop(updater_api: updater::Api, mut job_receiver: mpsc::Receiver<(Job, Instant)>) {
     while let Some((mut job, instant)) = job_receiver.recv().await {
-        job.status = JobStatus::Finished("output".into());
+        job.status = JobStatus::Finished(Some(Bytes::from("output")));
 
         let handle = updater_api.update_job(job).await;
 

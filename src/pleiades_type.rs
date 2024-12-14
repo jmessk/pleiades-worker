@@ -96,6 +96,6 @@ pub enum JobStatus {
         context: RuntimeContext,
         request: RuntimeRequest,
     },
-    Finished(Bytes),
+    Finished(Option<Bytes>),
     Cancelled,
 }

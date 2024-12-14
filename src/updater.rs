@@ -19,7 +19,6 @@ pub struct Updater {
 
     /// data manager api
     ///
-    ///
     data_manager_api: data_manager::Api,
 
     /// interface to access this component
@@ -76,8 +75,8 @@ impl Updater {
 
                 match request {
                     Command::FinishJob(request) => {
-                        Self::task_finish_job(client, data_manager_api, request).await
-                    } // Command::PostBlob(request) => Self::task_post_blob(client, request).await,
+                        Self::task_update_job(client, data_manager_api, request).await
+                    }
                 }
 
                 task_counter.fetch_sub(1, Ordering::Relaxed);
@@ -89,13 +88,15 @@ impl Updater {
 
     /// task
     ///
-    async fn task_finish_job(
+    async fn task_update_job(
         client: Arc<pleiades_api::Client>,
         data_manager_api: data_manager::Api,
-        request: finish::Request,
+        request: update::Request,
     ) {
         match request.job.status {
             JobStatus::Finished(output) => {
+                let output = output.unwrap_or(bytes::Bytes::new());
+
                 let post_handle = data_manager_api.post_blob(output).await;
                 let post_response = post_handle.recv().await;
 
@@ -124,11 +125,6 @@ impl Updater {
             }
             _ => {}
         };
-
-        request
-            .response_sender
-            .send(finish::Response {})
-            .expect("no error handling: updater");
     }
 
     /// wait_for_shutdown
@@ -157,48 +153,27 @@ pub struct Api {
 impl Api {
     /// get_blob
     ///
-    pub async fn update_job(&self, job: Job) -> finish::Handle {
-        let (response_sender, response_receiver) = oneshot::channel();
-
-        let request = Command::FinishJob(finish::Request {
-            response_sender,
-            job,
-        });
-
+    pub async fn update_job(&self, job: Job) {
+        let request = Command::FinishJob(update::Request { job });
         self.command_sender.send(request).await.unwrap();
+    }
 
-        finish::Handle { response_receiver }
+    pub fn update_job_nowait(&self, job: Job) {
+        let request = Command::FinishJob(update::Request { job });
+        self.command_sender.blocking_send(request).unwrap();
     }
 }
 
 pub enum Command {
-    FinishJob(finish::Request),
+    FinishJob(update::Request),
     // PostBlob(cannel::Request),
 }
 
-pub mod finish {
+pub mod update {
     use super::*;
 
     pub struct Request {
-        pub response_sender: oneshot::Sender<Response>,
         pub job: Job,
-    }
-
-    #[derive(Debug)]
-    pub struct Response {}
-
-    pub struct Handle {
-        pub response_receiver: oneshot::Receiver<Response>,
-    }
-
-    impl Handle {
-        pub async fn recv(self) -> Response {
-            self.response_receiver.await.unwrap()
-        }
-
-        pub fn recv_nowait(&mut self) -> Option<Response> {
-            self.response_receiver.try_recv().ok()
-        }
     }
 }
 

@@ -148,11 +148,13 @@ impl Contractor {
         //
         let get_input_handle = data_manager_api.get_blob(job_info.input.data_id).await;
         let get_code_handle = data_manager_api.get_blob(job_info.lambda.data_id).await;
-
+        //
         let input = get_input_handle.recv().await.blob;
         let code = get_code_handle.recv().await.blob;
+        //
+        // ////
 
-        let job_metadata = Job {
+        let job = Job {
             id: job_id,
             status: JobStatus::Assigned,
             time_counter: Duration::default(),
@@ -168,7 +170,7 @@ impl Contractor {
         request
             .response_sender
             .send(contract::Response {
-                contracted: Some(job_metadata),
+                contracted: Some(job),
             })
             .expect("contractor");
     }

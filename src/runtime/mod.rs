@@ -19,10 +19,16 @@ pub trait Context {
 
 #[derive(Debug)]
 pub enum RuntimeContext {
-    JavaScript(js::JsContext),
+    JavaScript(Box<js::JsContext>),
     Python,
 }
 
+/// RuntimeRequest
+/// 
+/// 
+/// 
+/// 
+/// 
 #[derive(Debug, Clone)]
 pub enum RuntimeRequest {
     Gpu(gpu::Request),
@@ -30,6 +36,11 @@ pub enum RuntimeRequest {
     Http(http::Response),
 }
 
+/// RuntimeResponse
+/// 
+/// 
+/// 
+/// 
 #[derive(Debug, Clone)]
 pub enum RuntimeResponse {
     Gpu(gpu::Response),

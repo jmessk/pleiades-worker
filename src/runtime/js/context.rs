@@ -90,11 +90,6 @@ impl JsContext {
             .register_module(js_string!("pleiades"), pleiades_module.clone());
 
         pleiades_module.load_link_evaluate(context);
-        context.run_jobs();
-
-        let namespace = pleiades_module.namespace(context);
-        let result = namespace.get(js_string!("pleiades"), context);
-        println!("{:?}", result);
     }
 
     /// Register user-defined function
@@ -119,6 +114,8 @@ impl JsContext {
         self.context
             .module_loader()
             .register_module(js_string!("user"), module);
+
+        self.register_entrypoint();
 
         Ok(())
     }
@@ -191,7 +188,6 @@ mod tests {
         let mut context = JsContext::init();
         context.register_user_defined_functions(&code).unwrap();
         context.register_user_input(&input);
-        context.register_entrypoint();
 
         let request = context.step().unwrap();
         println!("request: {:?}", request);
