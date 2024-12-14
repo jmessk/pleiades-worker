@@ -10,7 +10,7 @@ pub fn get_user_input(
     _args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    UserInput::get_from_context(context.realm())
+    UserInput::get_and_remove_from_context(context.realm())
         .map(|input| {
             let array = JsUint8Array::from_iter(input.data, context)?;
             Ok(JsValue::from(array))

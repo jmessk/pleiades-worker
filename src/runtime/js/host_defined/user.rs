@@ -14,13 +14,13 @@ unsafe impl Trace for UserInput {
 }
 
 impl HostDefined for UserInput {
-    fn get_from_context(realm: &Realm) -> Option<Self> {
-        let host_defined = realm.host_defined();
+    // fn get_from_context(realm: &Realm) -> Option<Self> {
+    //     let host_defined = realm.host_defined();
 
-        host_defined.get::<Self>().map(|job_context| Self {
-            data: job_context.data.clone(),
-        })
-    }
+    //     host_defined.get::<Self>().map(|job_context| Self {
+    //         data: job_context.data.clone(),
+    //     })
+    // }
 }
 
 #[derive(Debug, Finalize, JsData)]
@@ -33,11 +33,11 @@ unsafe impl Trace for UserOutput {
 }
 
 impl HostDefined for UserOutput {
-    fn get_from_context(realm: &Realm) -> Option<Self> {
-        let host_defined = realm.host_defined();
+    // fn get_from_context(realm: &Realm) -> Option<Self> {
+    //     let host_defined = realm.host_defined();
 
-        host_defined.get::<Self>().map(|user_output| Self {
-            data: user_output.data.clone(),
-        })
-    }
+    //     host_defined.get::<Self>().map(|user_output| Self {
+    //         data: user_output.data.clone(),
+    //     })
+    // }
 }

@@ -43,8 +43,7 @@ impl JsContext {
     fn init_context() -> boa_engine::Context {
         boa_engine::Context::builder()
             // .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
-            // .job_queue(Rc::new(job_queue::SyncJobQueue::new()))
-            .job_queue(Rc::new(job_queue::SimpleJobQueue::new()))
+            .job_queue(Rc::new(job_queue::SyncJobQueue::new()))
             .module_loader(Rc::new(module::CustomModuleLoader::new()))
             .build()
             .unwrap()
@@ -168,43 +167,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_class() {
-        let code = r#"
-            import { blob } from "pleiades"
-
-            async function fetch(job) {
-                let someData = await blob.get("12345");
-                console.log(someData);
-
-                return "test_output"; 
-            }
-
-            export default fetch;
-    "#;
-
-        let mut job = Job::default();
-        job.lambda.code.data = code.into();
-
-        let mut context = JsContext::init(&job);
-
-        let request = context.step();
-        println!("{:?}", request);
-        println!("set runtime response");
-        RuntimeResponse::Blob(blob::Response::Get("test_insert".into()))
-            .insert_into_context(context.context.realm());
-
-        let output = context.get_output();
-        assert_eq!(output, Some("test_output".into()));
-    }
-
-    #[test]
     fn test_output() {
         let code = r#"
             import { blob } from "pleiades"
 
             async function fetch(job) {
                 console.log("fetch");
-                let someData = await blob.getAsync("12345");
+                let someData = await blob.get("12345");
                 console.log(someData);
 
                 return "test_output"; 

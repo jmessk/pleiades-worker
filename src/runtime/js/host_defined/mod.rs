@@ -14,16 +14,16 @@ where
         realm.host_defined_mut().insert(self)
     }
 
-    fn get_from_context(realm: &Realm) -> Option<Self>;
+    // fn get_from_context(realm: &Realm) -> Option<Self>;
 
     fn exists_in_context(realm: &Realm) -> bool {
         let host_defined = realm.host_defined();
         host_defined.has::<Self>()
     }
 
-    fn remove_from_context(realm: &Realm) -> Option<Box<Self>> {
+    fn get_and_remove_from_context(realm: &Realm) -> Option<Self> {
         let mut host_defined = realm.host_defined_mut();
-        host_defined.remove::<Self>()
+        host_defined.remove::<Self>().map(|r| *r)
     }
 }
 
@@ -34,9 +34,9 @@ unsafe impl Trace for RuntimeRequest {
 }
 
 impl HostDefined for RuntimeRequest {
-    fn get_from_context(realm: &Realm) -> Option<Self> {
-        realm.host_defined().get::<Self>().cloned()
-    }
+    // fn get_from_context(realm: &Realm) -> Option<Self> {
+    //     realm.host_defined().get::<Self>().cloned()
+    // }
 }
 
 impl JsData for RuntimeResponse {}
@@ -46,7 +46,7 @@ unsafe impl Trace for RuntimeResponse {
 }
 
 impl HostDefined for RuntimeResponse {
-    fn get_from_context(realm: &Realm) -> Option<Self> {
-        realm.host_defined().get::<Self>().cloned()
-    }
+    // fn get_from_context(realm: &Realm) -> Option<Self> {
+    //     realm.host_defined().get::<Self>().cloned()
+    // }
 }
