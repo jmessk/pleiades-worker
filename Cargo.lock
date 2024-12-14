@@ -1364,6 +1364,7 @@ dependencies = [
  "pleiades",
  "pleiades-api",
  "pollster 0.4.0",
+ "reqwest",
  "tokio",
 ]
 

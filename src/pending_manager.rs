@@ -8,7 +8,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::pleiades_type::{Job, JobStatus};
-use crate::runtime::{blob, gpu, http, RuntimeRequest};
+use crate::runtime::{blob, gpu, http, RuntimeRequest, RuntimeResponse};
 use crate::{data_manager, scheduler};
 
 /// Contractor
@@ -32,6 +32,10 @@ pub struct PendingManager {
     /// data_manager_controller
     ///
     data_manager_controller: data_manager::Controller,
+
+    /// http_client
+    ///
+    http_client: reqwest::Client,
 }
 
 impl PendingManager {
@@ -48,6 +52,7 @@ impl PendingManager {
             task_counter: Arc::new(AtomicUsize::new(0)),
             scheduler_controller: Arc::new(()),
             data_manager_controller,
+            http_client: reqwest::Client::new(),
         };
 
         let controller = Controller { command_sender };
@@ -64,13 +69,11 @@ impl PendingManager {
         while let Some(request) = self.command_receiver.recv().await {
             match request {
                 Command::Register(request) => {
+                    let mut job = request.job;
+
                     // extract request
                     //
-                    let request = if let JobStatus::Pending {
-                        context: _,
-                        request,
-                    } = request.job.status
-                    {
+                    let runtime_request = if let JobStatus::Pending(request) = job.status {
                         request
                     } else {
                         println!("unreachable");
@@ -81,18 +84,25 @@ impl PendingManager {
 
                     self.task_counter.fetch_add(1, Ordering::Relaxed);
 
+                    // clone to move
                     let task_counter = self.task_counter.clone();
                     let scheduler_controller = self.scheduler_controller.clone();
 
-                    match request {
+                    match runtime_request {
                         // blob
                         RuntimeRequest::Blob(blob::Request::Get(blob_id)) => {
+                            job.status = JobStatus::Temporal;
+
                             let handle = self.data_manager_controller.get_blob(blob_id).await;
+
                             tokio::spawn(async move {
+                                Self::task_blob_get(scheduler_controller, handle, job).await;
                                 task_counter.fetch_sub(1, Ordering::Relaxed);
                             });
                         }
                         RuntimeRequest::Blob(blob::Request::Post(data)) => {
+                            job.status = JobStatus::Temporal;
+
                             tokio::spawn(async move {
                                 task_counter.fetch_sub(1, Ordering::Relaxed);
                             });
@@ -100,6 +110,8 @@ impl PendingManager {
 
                         // gpu
                         RuntimeRequest::Gpu(gpu::Request { data }) => {
+                            job.status = JobStatus::Temporal;
+
                             tokio::spawn(async move {
                                 task_counter.fetch_sub(1, Ordering::Relaxed);
                             });
@@ -107,12 +119,32 @@ impl PendingManager {
 
                         // http
                         RuntimeRequest::Http(http::Request::Get(url)) => {
+                            job.status = JobStatus::Temporal;
+
+                            let client = self.http_client.clone();
+
                             tokio::spawn(async move {
+                                Self::task_http_get(scheduler_controller, client, url.clone(), job)
+                                    .await;
+
                                 task_counter.fetch_sub(1, Ordering::Relaxed);
                             });
                         }
-                        RuntimeRequest::Http(http::Request::Post(url)) => {
+                        RuntimeRequest::Http(http::Request::Post { url, body }) => {
+                            job.status = JobStatus::Temporal;
+
+                            let client = self.http_client.clone();
+
                             tokio::spawn(async move {
+                                Self::task_http_post(
+                                    scheduler_controller,
+                                    client,
+                                    url.clone(),
+                                    body,
+                                    job,
+                                )
+                                .await;
+
                                 task_counter.fetch_sub(1, Ordering::Relaxed);
                             });
                         }
@@ -125,16 +157,70 @@ impl PendingManager {
     async fn task_blob_get(
         scheduler_controller: Arc<()>,
         handle: data_manager::get_blob::Handle,
-        job: Job,
+        mut job: Job,
     ) {
         let response = handle.recv().await;
+        job.status = JobStatus::Ready(RuntimeResponse::Blob(blob::Response::Get(response.blob)));
 
-        match response.blob {
-            Some(blob) => {
-                let old_status = job.status;
-                job.status = JobStatus::Ready { context: old_status.0, response: () }
+        todo!()
+    }
+
+    async fn task_blob_post(
+        scheduler_controller: Arc<()>,
+        handle: data_manager::post_blob::Handle,
+        mut job: Job,
+    ) {
+        let response = handle.recv().await;
+        job.status = JobStatus::Ready(RuntimeResponse::Blob(blob::Response::Post(response.blob)));
+
+        todo!()
+    }
+
+    async fn task_http_get(
+        scheduler_controller: Arc<()>,
+        client: reqwest::Client,
+        url: String,
+        mut job: Job,
+    ) {
+        let response = client.get(url).send().await.ok();
+
+        match response {
+            Some(response) => {
+                let body = response.bytes().await.unwrap();
+                job.status =
+                    JobStatus::Ready(RuntimeResponse::Http(http::Response::Get(Some(body))));
+            }
+            None => {
+                println!("http get failed");
+                job.status = JobStatus::Ready(RuntimeResponse::Http(http::Response::Get(None)));
             }
         }
+
+        todo!()
+    }
+
+    async fn task_http_post(
+        scheduler_controller: Arc<()>,
+        client: reqwest::Client,
+        url: String,
+        body: Bytes,
+        mut job: Job,
+    ) {
+        let response = client.post(url).body(body).send().await.ok();
+
+        match response {
+            Some(response) => {
+                let body = response.bytes().await.unwrap();
+                job.status =
+                    JobStatus::Ready(RuntimeResponse::Http(http::Response::Post(Some(body))));
+            }
+            None => {
+                println!("http post failed");
+                job.status = JobStatus::Ready(RuntimeResponse::Http(http::Response::Post(None)));
+            }
+        }
+
+        todo!()
     }
 }
 

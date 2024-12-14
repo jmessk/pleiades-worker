@@ -59,7 +59,7 @@ impl Default for Lambda {
 pub struct Job {
     pub status: JobStatus,
     pub remaining_time: Duration,
-    // pub context: Option<RuntimeContext>
+    pub context: Option<RuntimeContext>,
     pub id: String,
     pub lambda: Lambda,
     pub input: Blob,
@@ -84,14 +84,9 @@ pub enum JobStatus {
     #[default]
     Assigned,
     Running,
-    Ready {
-        context: RuntimeContext,
-        response: RuntimeResponse,
-    },
-    Pending {
-        context: RuntimeContext,
-        request: RuntimeRequest,
-    },
+    Ready(RuntimeResponse),
+    Pending(RuntimeRequest),
     Finished(Option<Bytes>),
     Cancelled,
+    Temporal,
 }

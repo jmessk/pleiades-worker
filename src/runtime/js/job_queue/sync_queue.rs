@@ -4,7 +4,7 @@ use boa_engine::{
 };
 use std::{cell::RefCell, collections::VecDeque};
 
-use crate::runtime::{js::host_defined::HostDefined as _, RuntimeRequest, RuntimeResponse};
+use crate::runtime::{js::host_defined::HostDefined as _, RuntimeRequest};
 
 #[derive(Default)]
 pub struct SyncJobQueue(RefCell<VecDeque<NativeJob>>);

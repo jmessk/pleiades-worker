@@ -1,9 +1,9 @@
 mod class;
+mod context;
 mod function;
 mod host_defined;
 mod job_queue;
 mod module;
-mod context;
 
 pub use context::JsContext;
 
@@ -42,13 +42,18 @@ impl Runtime for JsRuntime {
 
                 Box::new(context)
             }
-            JobStatus::Ready {
-                context: RuntimeContext::JavaScript(mut context),
-                response,
-            } => {
-                context.set_response(response);
-                context
-            }
+            JobStatus::Ready(response) => match job.context {
+                Some(RuntimeContext::JavaScript(mut context)) => {
+                    context.set_response(response);
+                    context
+                }
+                _ => {
+                    println!("No context found");
+                    job.cancel();
+
+                    return job;
+                }
+            },
             _ => {
                 println!("Invalid job status: {:?}", job.status);
                 job.cancel();
@@ -58,18 +63,14 @@ impl Runtime for JsRuntime {
         };
 
         match context.step() {
-            Some(request) => {
-                job.status = JobStatus::Pending {
-                    context: RuntimeContext::JavaScript(context),
-                    request,
-                }
-            }
+            Some(request) => job.status = JobStatus::Pending(request),
             None => {
                 let output = context.get_output();
                 job.status = JobStatus::Finished(output)
             }
         }
 
+        job.context = Some(RuntimeContext::JavaScript(context));
         job
     }
 }
@@ -140,11 +141,7 @@ mod tests {
         // start processing the job
         let job = runtime.process(job);
 
-        if let JobStatus::Pending {
-            context: _,
-            request: RuntimeRequest::Blob(blob::Request::Get(blob_id)),
-        } = job.status
-        {
+        if let JobStatus::Pending(RuntimeRequest::Blob(blob::Request::Get(blob_id))) = job.status {
             assert_eq!(blob_id, "12345");
         }
     }

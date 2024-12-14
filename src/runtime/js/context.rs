@@ -162,7 +162,7 @@ impl JsContext {
 mod tests {
     use runtime::Context as _;
 
-    use crate::runtime::blob;
+    use crate::{pleiades_type::Blob, runtime::blob};
 
     use super::*;
 
@@ -193,7 +193,11 @@ mod tests {
         println!("request: {:?}", request);
 
         println!("set runtime response");
-        context.set_response(RuntimeResponse::Blob(blob::Response::Get("test_insert".into())));
+
+        context.set_response(RuntimeResponse::Blob(blob::Response::Get(Some(Blob {
+            data: "test_insert".into(),
+            id: "12345".into(),
+        }))));
 
         context.step();
 

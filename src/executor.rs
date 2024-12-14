@@ -100,10 +100,7 @@ impl Executor {
             JobStatus::Finished(_) | JobStatus::Cancelled => {
                 self.updater_controller.update_job_nowait(processed_job);
             }
-            JobStatus::Pending {
-                context: _,
-                request,
-            } => {
+            JobStatus::Pending(request) => {
                 todo!()
             }
             _ => {}

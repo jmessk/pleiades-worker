@@ -1,4 +1,4 @@
-use boa_engine::{realm::Realm, Context, JsData};
+use boa_engine::JsData;
 use boa_gc::{empty_trace, Finalize, Trace};
 use bytes::Bytes;
 

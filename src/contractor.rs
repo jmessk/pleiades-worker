@@ -158,6 +158,7 @@ impl Contractor {
             id: job_id,
             status: JobStatus::Assigned,
             remaining_time: Duration::from_secs(0),
+            context: None,
             lambda: Lambda {
                 id: job_info.lambda.lambda_id,
                 runtime: job_info.lambda.runtime,

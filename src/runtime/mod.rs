@@ -24,12 +24,12 @@ pub enum RuntimeContext {
 }
 
 /// RuntimeRequest
-/// 
-/// 
-/// 
-/// 
-/// 
-#[derive(Debug, Clone)]
+///
+///
+///
+///
+///
+#[derive(Debug)]
 pub enum RuntimeRequest {
     Gpu(gpu::Request),
     Blob(blob::Request),
@@ -37,11 +37,11 @@ pub enum RuntimeRequest {
 }
 
 /// RuntimeResponse
-/// 
-/// 
-/// 
-/// 
-#[derive(Debug, Clone)]
+///
+///
+///
+///
+#[derive(Debug)]
 pub enum RuntimeResponse {
     Gpu(gpu::Response),
     Blob(blob::Response),
@@ -49,18 +49,20 @@ pub enum RuntimeResponse {
 }
 
 pub mod blob {
+    use crate::pleiades_type::Blob;
+
     use super::*;
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub enum Request {
         Get(String),
         Post(Bytes),
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub enum Response {
-        Get(Bytes),
-        Post(String),
+        Get(Option<Blob>),
+        Post(Blob),
     }
 }
 
@@ -84,12 +86,12 @@ pub mod http {
     #[derive(Debug, Clone)]
     pub enum Request {
         Get(String),
-        Post(Bytes),
+        Post { url: String, body: Bytes },
     }
 
     #[derive(Debug, Clone)]
     pub enum Response {
-        Get(Bytes),
-        Post(String),
+        Get(Option<Bytes>),
+        Post(Option<Bytes>),
     }
 }

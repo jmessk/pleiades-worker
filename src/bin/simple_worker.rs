@@ -91,16 +91,15 @@ async fn loop_contractor(
     join_set.join_all().await;
 }
 
-async fn updater_loop(updater_api: updater::Controller, mut job_receiver: mpsc::Receiver<(Job, Instant)>) {
+async fn updater_loop(
+    updater_api: updater::Controller,
+    mut job_receiver: mpsc::Receiver<(Job, Instant)>,
+) {
     while let Some((mut job, instant)) = job_receiver.recv().await {
         job.status = JobStatus::Finished(Some(Bytes::from("output")));
 
-        let handle = updater_api.update_job(job).await;
-
-        tokio::spawn(async move {
-            handle.recv().await;
-            println!("job finished in {:?}", instant.elapsed());
-        });
+        updater_api.update_job(job).await;
+        println!("job finished in {:?}", instant.elapsed());
     }
 }
 
