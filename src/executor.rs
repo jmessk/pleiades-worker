@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 
 use crate::pleiades_type::{Job, JobStatus};
 use crate::runtime::{JsRuntime, Runtime as _};
-use crate::{pending_manager, updater};
+use crate::{pending_manager, scheduler, updater};
 
 /// Executor
 ///
@@ -23,10 +23,11 @@ pub struct Executor {
     /// updater
     ///
     // updater_controller: updater::Controller,
+    scheduler_controller: scheduler::Controller,
 
     /// pending_manager
     ///
-    // pending_manager_controller: pending_manager::Controller,
+    pending_manager_controller: pending_manager::Controller,
 
     /// max_queueing_time
     ///
@@ -45,7 +46,8 @@ impl Executor {
     ///
     ///
     pub fn new(// updater_controller: updater::Controller,
-        // pending_manager_controller: pending_manager::Controller,
+        pending_manager_controller: pending_manager::Controller,
+        scheduler_controller: scheduler::Controller,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
@@ -54,7 +56,8 @@ impl Executor {
         let data_manager = Self {
             command_receiver,
             // updater_controller,
-            // pending_manager_controller,
+            scheduler_controller,
+            pending_manager_controller,
             max_queueing_time: max_queueing_time.clone(),
             runtime: JsRuntime::init(),
         };
@@ -105,22 +108,23 @@ impl Executor {
         }
 
         match processed_job.status {
-            JobStatus::Finished(_) | JobStatus::Cancelled => {
-                self.updater_controller.update_job_nowait(processed_job);
-            }
+            // JobStatus::Finished(_) | JobStatus::Cancelled => {
+            //     self.updater_controller.update_job_nowait(processed_job);
+            // }
             JobStatus::Pending(_) => {
-                if processed_job.is_timeout() {
-                    println!("Job is timeout");
-                    processed_job.cancel();
-                    self.updater_controller.update_job_nowait(processed_job);
-                } else {
-                    self.pending_manager_controller
-                        .register_nowait(processed_job);
-                }
+                // if processed_job.is_timeout() {
+                //     println!("Job is timeout");
+                //     processed_job.cancel();
+                //     self.updater_controller.update_job_nowait(processed_job);
+                // } else {
+                //     self.pending_manager_controller
+                //         .register_nowait(processed_job);
+                // }
+                self.scheduler_controller.
             }
             _ => {
                 processed_job.cancel();
-                self.updater_controller.update_job_nowait(processed_job);
+                // self.updater_controller.update_job_nowait(processed_job);
                 unreachable!();
             }
         }

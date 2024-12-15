@@ -310,7 +310,17 @@ pub enum Command {
 pub mod register {
     use super::*;
 
+    // pub struct Handle {
+    //     pub response_receiver: tokio::sync::oneshot::Receiver<Response>,
+    // }
+
     pub struct Request {
+        // pub response_sender: tokio::sync::oneshot::Sender<Response>,
         pub job: Job,
     }
+
+    // #[derive(Debug)]
+    // pub struct Response {
+    //     pub job: Job,
+    // }
 }
