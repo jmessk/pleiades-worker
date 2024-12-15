@@ -1,4 +1,5 @@
 use cpu_time::ThreadTime;
+use enqueue::Handle;
 use std::ops::{AddAssign, SubAssign};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -21,11 +22,11 @@ pub struct Executor {
 
     /// updater
     ///
-    updater_controller: updater::Controller,
+    // updater_controller: updater::Controller,
 
     /// pending_manager
     ///
-    pending_manager_controller: pending_manager::Controller,
+    // pending_manager_controller: pending_manager::Controller,
 
     /// max_queueing_time
     ///
@@ -43,9 +44,8 @@ impl Executor {
     ///
     ///
     ///
-    pub fn new(
-        updater_controller: updater::Controller,
-        pending_manager_controller: pending_manager::Controller,
+    pub fn new(// updater_controller: updater::Controller,
+        // pending_manager_controller: pending_manager::Controller,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
@@ -53,8 +53,8 @@ impl Executor {
 
         let data_manager = Self {
             command_receiver,
-            updater_controller,
-            pending_manager_controller,
+            // updater_controller,
+            // pending_manager_controller,
             max_queueing_time: max_queueing_time.clone(),
             runtime: JsRuntime::init(),
         };
@@ -142,9 +142,7 @@ impl Controller {
     /// get_blob
     ///
     ///
-    ///
-    ///
-    pub async fn enqueue(&self, job: Job) {
+    pub async fn enqueue(&self, job: Job) -> enqueue::Handle {
         {
             self.max_queueing_time
                 .lock()
@@ -152,16 +150,22 @@ impl Controller {
                 .add_assign(job.remaining_time);
         }
 
-        let request = Command::Enqueue(enqueue::Request { job });
+        let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
+
+        let request = Command::Enqueue(enqueue::Request {
+            job,
+            response_sender,
+        });
+
         self.command_sender.send(request).await.unwrap();
+
+        enqueue::Handle { response_receiver }
     }
 
     /// get_max_queueing_time
     ///
     ///
-    ///
-    ///
-    pub fn get_max_queueing_time(&self) -> Duration {
+    pub fn max_queueing_time(&self) -> Duration {
         *self.max_queueing_time.lock().unwrap()
     }
 }
@@ -176,9 +180,20 @@ pub enum Command {
 }
 
 pub mod enqueue {
+    use tokio::sync::oneshot;
+
     use super::*;
 
+    pub struct Handle {
+        pub response_receiver: oneshot::Receiver<Response>,
+    }
+
     pub struct Request {
+        pub response_sender: oneshot::Sender<Response>,
+        pub job: Job,
+    }
+
+    pub struct Response {
         pub job: Job,
     }
 }

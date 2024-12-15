@@ -27,7 +27,7 @@ pub struct Fetcher {
 impl Fetcher {
     /// new
     ///
-    pub fn new(client: Arc<pleiades_api::Client>) -> (Self, Api) {
+    pub fn new(client: Arc<pleiades_api::Client>) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let fetcher = Self {
@@ -36,7 +36,7 @@ impl Fetcher {
             task_counter: Arc::new(AtomicUsize::new(0)),
         };
 
-        let api = Api { command_sender };
+        let api = Controller { command_sender };
 
         (fetcher, api)
     }
@@ -140,11 +140,11 @@ impl Fetcher {
 ///
 ///
 #[derive(Clone)]
-pub struct Api {
+pub struct Controller {
     command_sender: mpsc::Sender<Command>,
 }
 
-impl Api {
+impl Controller {
     /// get_blob
     ///
     pub async fn download_blob(&self, blob_id: String) -> download_blob::Handle {

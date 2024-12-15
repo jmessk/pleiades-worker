@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 use tokio::{sync::mpsc, task::JoinSet};
 
@@ -36,7 +39,8 @@ pub struct Scheduler {
 
     /// executor_controller
     ///
-    executor_controller_list: Vec<executor::Controller>,
+    // executor_list: Vec<(executor::Controller, Duration)>,
+    helper_list: Vec<SchedulingHelper>,
 }
 
 impl Scheduler {
@@ -51,13 +55,23 @@ impl Scheduler {
 
         let controller = Controller { command_sender };
 
+        let helper_list = executor_controller_list
+            .into_iter()
+            .map(SchedulingHelper::new)
+            .collect();
+
+        // let executor_list = executor_controller_list
+        //     .into_iter()
+        //     .map(|controller| (controller, Duration::from_secs(0)))
+        //     .collect();
+
         let updater = Self {
             client,
             command_receiver,
             task_counter: Arc::new(AtomicUsize::new(0)),
             scheduler_controller: controller.clone(),
             contractor_controller,
-            executor_controller_list,
+            helper_list,
         };
 
         (updater, controller)
@@ -66,34 +80,33 @@ impl Scheduler {
     /// run
     ///
     pub async fn run(&mut self) {
-        let contract_join_set = JoinSet::new();
+        self.algorithm_1().await;
 
-        while let Some(command) = self.command_receiver.recv().await {
-            match command {
-                Command::Enqueue(enqueue::Request { job }) => {}
-            }
-        }
-        
         self.wait_for_shutdown().await;
     }
 
-    async fn run_join_set(&self, join_set: JoinSet) {
-        join_set.await;
-    }
+    async fn algorithm_1(&mut self) {
+        let mut job_buf: Vec<Command> = Vec::with_capacity(64);
+        let job_buf_capacity = job_buf.capacity();
 
-    /// task
-    ///
-    async fn task_wait_contract(handle: contract::Handle, scheduler_controller: Controller) {
-        let response = handle.recv().await;
+        loop {
+            // 1. get jobs in the scheduler queue
+            let num_jobs = self
+                .command_receiver
+                .blocking_recv_many(&mut job_buf, job_buf_capacity);
 
-        if let Some(job) = response.contracted {
-            scheduler_controller.enqueue_global(job).await
+            // 2. get current max queueing time of the executor
+
+            // next, if jobs are in the queue, determine which executor to use
+
+            todo!()
         }
     }
 
+
     /// wait_for_shutdown
     ///
-    pub async fn wait_for_shutdown(&self) {
+    async fn wait_for_shutdown(&self) {
         println!("Scheduler is shutting down");
 
         while self.task_counter.load(Ordering::Relaxed) > 0 {
@@ -101,6 +114,22 @@ impl Scheduler {
         }
 
         println!("Scheduler is shut down");
+    }
+}
+
+/// tasks
+///
+///
+impl Scheduler {
+    /// task_contract_background
+    ///
+    ///
+    async fn task_contract_background(handle: contract::Handle, scheduler_controller: Controller) {
+        let response = handle.recv().await;
+
+        if let Some(job) = response.contracted {
+            scheduler_controller.enqueue_assigned(job).await
+        }
     }
 }
 
@@ -115,19 +144,27 @@ pub struct Controller {
 }
 
 impl Controller {
-    /// get_blob
+    /// enqueue_ready
     ///
-    pub async fn enqueue_global(&self, job: Job) {
-        let request = Command::Enqueue(enqueue::Request { job });
+    pub async fn enqueue_ready(&self, job: Job) {
+        let request = Command::Ready(ready::Request { job });
+        self.command_sender.send(request).await.unwrap();
+    }
+
+    /// enqueue_assigned
+    ///
+    pub async fn enqueue_assigned(&self, job: Job) {
+        let request = Command::Assigned(assigned::Request { job });
         self.command_sender.send(request).await.unwrap();
     }
 }
 
 pub enum Command {
-    Enqueue(enqueue::Request),
+    Ready(ready::Request),
+    Assigned(assigned::Request),
 }
 
-pub mod enqueue {
+pub mod ready {
     use super::*;
 
     pub struct Request {
@@ -135,19 +172,77 @@ pub mod enqueue {
     }
 }
 
-struct ContractJoinSet {
-    scheduler_controller: Controller,
+pub mod assigned {
+    use super::*;
+
+    pub struct Request {
+        pub job: Job,
+    }
 }
 
-impl ContractJoinSet {
-    pub fn run(&self) {
-        let contract_join_set = JoinSet::new();
+pub mod contract_join_set {
+    use super::*;
 
-        while let Some(command) = self.command_receiver.recv().await {
-            match command {
+    struct ContractJoinSet {
+        scheduler_controller: Controller,
+    }
+
+    impl ContractJoinSet {
+        pub fn new(scheduler_controller: Controller) -> Self {
+            Self {
+                scheduler_controller,
             }
+        }
 
-            
+        // pub fn run(&self) {
+        //     let contract_join_set = JoinSet::new();
+
+        //     while let Some(command) = self.command_receiver.recv().await {
+        //         contract_join_set.spawn(async move {})
+        //     }
+        // }
+    }
+
+    pub struct Request {
+        pub job: Job,
+    }
+
+    pub struct Response {
+        pub job: Job,
+    }
+}
+
+struct SchedulingHelper {
+    executor_controller: executor::Controller,
+
+    /// estimated max queueing time
+    ///
+    /// contains current queueing time and estimated time of contracting jobs
+    estimated_max_queuing_time: Duration,
+}
+
+impl SchedulingHelper {
+    pub fn new(executor_controller: executor::Controller) -> Self {
+        Self {
+            executor_controller,
+            estimated_max_queuing_time: Duration::from_secs(0),
         }
     }
+
+    pub fn init_with_current_queuing_time(&mut self) {
+        self.estimated_max_queuing_time = self.executor_controller.max_queueing_time();
+    }
+
+    pub fn estimated_max_queuing_time(&self) -> Duration {
+        self.estimated_max_queuing_time
+    }
+
+    pub async fn enqueue(&mut self, job: Job) {
+        self.estimated_max_queuing_time += job.remaining_time;
+        self.executor_controller.enqueue(job).await;
+    }
+
+    // pub fn reset_estimated_queuing_time(&mut self) {
+    //     self.estimated_max_queuing_time = Duration::from_secs(0);
+    // }
 }

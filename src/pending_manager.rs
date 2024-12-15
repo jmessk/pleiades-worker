@@ -183,7 +183,7 @@ impl PendingManager {
         let response = handle.recv().await;
         job.status = JobStatus::Ready(RuntimeResponse::Blob(blob::Response::Get(response.blob)));
 
-        scheduler_controller.enqueue_global(job).await;
+        scheduler_controller.enqueue_ready(job).await;
     }
 
     /// task_blob_post
@@ -197,7 +197,7 @@ impl PendingManager {
         let response = handle.recv().await;
         job.status = JobStatus::Ready(RuntimeResponse::Blob(blob::Response::Post(response.blob)));
 
-        scheduler_controller.enqueue_global(job).await;
+        scheduler_controller.enqueue_ready(job).await;
     }
 
     /// task_http_get
@@ -223,7 +223,7 @@ impl PendingManager {
             }
         }
 
-        scheduler_controller.enqueue_global(job).await;
+        scheduler_controller.enqueue_ready(job).await;
     }
 
     /// task_http_post
@@ -250,7 +250,7 @@ impl PendingManager {
             }
         }
 
-        scheduler_controller.enqueue_global(job).await;
+        scheduler_controller.enqueue_ready(job).await;
     }
 
     /// wait_for_shutdown

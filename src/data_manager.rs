@@ -12,7 +12,7 @@ use crate::pleiades_type::Blob;
 ///
 ///
 pub struct DataManager {
-    fetcher_controller: fetcher::Api,
+    fetcher_controller: fetcher::Controller,
 
     /// interface to access this component
     ///
@@ -29,12 +29,11 @@ impl DataManager {
     ///
     ///
     ///
-    pub fn new(fetcher_controller: fetcher::Api) -> (Self, Controller) {
+    pub fn new(fetcher_controller: fetcher::Controller) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let data_manager = Self {
             fetcher_controller,
-            // command_sender: command_sender.clone(),
             command_receiver,
             task_counter: Arc::new(AtomicUsize::new(0)),
         };
@@ -74,7 +73,7 @@ impl DataManager {
     ///
     ///
     ///
-    async fn task_get_blob(fetcher_controller: fetcher::Api, request: get_blob::Request) {
+    async fn task_get_blob(fetcher_controller: fetcher::Controller, request: get_blob::Request) {
         let download_handle = fetcher_controller.download_blob(request.blob_id).await;
         let response = download_handle.recv().await;
 
@@ -91,7 +90,7 @@ impl DataManager {
     ///
     ///
     ///
-    async fn task_post_blob(fetcher_controller: fetcher::Api, request: post_blob::Request) {
+    async fn task_post_blob(fetcher_controller: fetcher::Controller, request: post_blob::Request) {
         let upload_handle = fetcher_controller.upload_blob(request.data.clone()).await;
         let blob = upload_handle.recv().await.blob;
 

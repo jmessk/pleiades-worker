@@ -150,7 +150,7 @@ async fn main() {
     }
 }
 
-fn create_context(api: pleiades_worker::fetcher::Api) -> Context {
+fn create_context(api: pleiades_worker::fetcher::Controller) -> Context {
     let queue = MyJobQueue::new();
 
     // use boa_engine::job::SimpleJobQueue;

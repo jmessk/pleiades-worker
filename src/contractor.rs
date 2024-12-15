@@ -54,13 +54,6 @@ impl Contractor {
         (contractor, controller)
     }
 
-    // pub fn api(&self) -> Api {
-    //     Api {
-    //         // num_contracting: self.task_counter.clone(),
-    //         command_sender: self.request_sender.clone(),
-    //     }
-    // }
-
     /// run
     ///
     ///
@@ -70,6 +63,11 @@ impl Contractor {
         while let Some(command) = self.command_receiver.recv().await {
             let client = self.client.clone();
             let data_manager_controller = self.data_manager_controller.clone();
+
+            if self.semaphore.available_permits() == 0 {
+                println!("Contractor: busy");
+            }
+
             let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
             tokio::spawn(async move {
@@ -78,7 +76,7 @@ impl Contractor {
                         Self::task_contract(client, data_manager_controller, request).await
                     }
                 }
-                drop(permit);
+                let _permit = permit;
             });
         }
 
