@@ -1,17 +1,13 @@
 use bytes::Bytes;
-use cpu_time::ThreadTime;
-use std::ops::{AddAssign, Sub};
 use std::sync::atomic::Ordering;
-use std::sync::Mutex;
 use std::sync::{atomic::AtomicUsize, Arc};
-use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 use crate::pleiades_type::{Job, JobStatus};
 use crate::runtime::{blob, gpu, http, RuntimeRequest, RuntimeResponse};
 use crate::{data_manager, scheduler};
 
-/// Contractor
+/// PendingManager
 ///
 ///
 ///
@@ -27,7 +23,7 @@ pub struct PendingManager {
 
     /// scheduler_controller
     ///
-    scheduler_controller: Arc<()>,
+    scheduler_controller: scheduler::Controller,
 
     /// data_manager_controller
     ///
@@ -44,13 +40,16 @@ impl PendingManager {
     ///
     ///
     ///
-    pub fn new(data_manager_controller: data_manager::Controller) -> (Self, Controller) {
+    pub fn new(
+        scheduler_controller: scheduler::Controller,
+        data_manager_controller: data_manager::Controller,
+    ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let data_manager = Self {
             command_receiver,
             task_counter: Arc::new(AtomicUsize::new(0)),
-            scheduler_controller: Arc::new(()),
+            scheduler_controller,
             data_manager_controller,
             http_client: reqwest::Client::new(),
         };
@@ -66,8 +65,8 @@ impl PendingManager {
     ///
     ///
     pub async fn run(&mut self) {
-        while let Some(request) = self.command_receiver.recv().await {
-            match request {
+        while let Some(command) = self.command_receiver.recv().await {
+            match command {
                 Command::Register(request) => {
                     let mut job = request.job;
 
@@ -90,8 +89,10 @@ impl PendingManager {
 
                     match runtime_request {
                         // blob
+                        //
+                        //
                         RuntimeRequest::Blob(blob::Request::Get(blob_id)) => {
-                            job.status = JobStatus::Temporal;
+                            job.status = JobStatus::Resolving;
 
                             let handle = self.data_manager_controller.get_blob(blob_id).await;
 
@@ -101,25 +102,38 @@ impl PendingManager {
                             });
                         }
                         RuntimeRequest::Blob(blob::Request::Post(data)) => {
-                            job.status = JobStatus::Temporal;
+                            job.status = JobStatus::Resolving;
+
+                            let handle = self.data_manager_controller.post_blob(data).await;
 
                             tokio::spawn(async move {
+                                Self::task_blob_post(scheduler_controller, handle, job).await;
                                 task_counter.fetch_sub(1, Ordering::Relaxed);
                             });
                         }
+                        //
+                        //
+                        // /////
 
                         // gpu
+                        //
+                        //
                         RuntimeRequest::Gpu(gpu::Request { data }) => {
-                            job.status = JobStatus::Temporal;
+                            job.status = JobStatus::Resolving;
 
                             tokio::spawn(async move {
                                 task_counter.fetch_sub(1, Ordering::Relaxed);
                             });
                         }
+                        //
+                        //
+                        // /////
 
                         // http
+                        //
+                        //
                         RuntimeRequest::Http(http::Request::Get(url)) => {
-                            job.status = JobStatus::Temporal;
+                            job.status = JobStatus::Resolving;
 
                             let client = self.http_client.clone();
 
@@ -131,7 +145,7 @@ impl PendingManager {
                             });
                         }
                         RuntimeRequest::Http(http::Request::Post { url, body }) => {
-                            job.status = JobStatus::Temporal;
+                            job.status = JobStatus::Resolving;
 
                             let client = self.http_client.clone();
 
@@ -147,37 +161,50 @@ impl PendingManager {
 
                                 task_counter.fetch_sub(1, Ordering::Relaxed);
                             });
-                        }
+                        } //
+                          //
+                          // /////
                     }
                 }
             }
         }
+
+        self.wait_for_shutdown().await;
     }
 
+    /// task_blob_get
+    ///
+    ///
     async fn task_blob_get(
-        scheduler_controller: Arc<()>,
+        scheduler_controller: scheduler::Controller,
         handle: data_manager::get_blob::Handle,
         mut job: Job,
     ) {
         let response = handle.recv().await;
         job.status = JobStatus::Ready(RuntimeResponse::Blob(blob::Response::Get(response.blob)));
 
-        todo!()
+        scheduler_controller.enqueue_global(job).await;
     }
 
+    /// task_blob_post
+    ///
+    ///
     async fn task_blob_post(
-        scheduler_controller: Arc<()>,
+        scheduler_controller: scheduler::Controller,
         handle: data_manager::post_blob::Handle,
         mut job: Job,
     ) {
         let response = handle.recv().await;
         job.status = JobStatus::Ready(RuntimeResponse::Blob(blob::Response::Post(response.blob)));
 
-        todo!()
+        scheduler_controller.enqueue_global(job).await;
     }
 
+    /// task_http_get
+    ///
+    ///
     async fn task_http_get(
-        scheduler_controller: Arc<()>,
+        scheduler_controller: scheduler::Controller,
         client: reqwest::Client,
         url: String,
         mut job: Job,
@@ -196,11 +223,14 @@ impl PendingManager {
             }
         }
 
-        todo!()
+        scheduler_controller.enqueue_global(job).await;
     }
 
+    /// task_http_post
+    ///
+    ///
     async fn task_http_post(
-        scheduler_controller: Arc<()>,
+        scheduler_controller: scheduler::Controller,
         client: reqwest::Client,
         url: String,
         body: Bytes,
@@ -220,11 +250,23 @@ impl PendingManager {
             }
         }
 
-        todo!()
+        scheduler_controller.enqueue_global(job).await;
+    }
+
+    /// wait_for_shutdown
+    ///
+    pub async fn wait_for_shutdown(&self) {
+        println!("Pending Manager is shutting down");
+
+        while self.task_counter.load(Ordering::Relaxed) > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+
+        println!("Pending Manager is shut down");
     }
 }
 
-/// Api
+/// Controller
 ///
 ///
 ///
@@ -235,7 +277,7 @@ pub struct Controller {
 }
 
 impl Controller {
-    /// get_blob
+    /// register
     ///
     ///
     ///
@@ -243,6 +285,16 @@ impl Controller {
     pub async fn register(&self, job: Job) {
         let request = Command::Register(register::Request { job });
         self.command_sender.send(request).await.unwrap();
+    }
+
+    /// register_nowait
+    ///
+    ///
+    ///
+    ///
+    pub fn register_nowait(&self, job: Job) {
+        let request = Command::Register(register::Request { job });
+        self.command_sender.blocking_send(request).unwrap();
     }
 }
 

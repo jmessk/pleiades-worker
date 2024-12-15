@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::fetcher;
 use crate::pleiades_type::Blob;
 
-/// Contractor
+/// DataManager
 ///
 ///
 ///
@@ -16,7 +16,6 @@ pub struct DataManager {
 
     /// interface to access this component
     ///
-    // command_sender: mpsc::Sender<Command>,
     command_receiver: mpsc::Receiver<Command>,
 
     /// number of jobs currently being contracted
@@ -45,33 +44,22 @@ impl DataManager {
         (data_manager, controller)
     }
 
-    /// api
-    ///
-    ///
-    ///
-    ///
-    // pub fn api(&self) -> Api {
-    //     Api {
-    //         command_sender: self.command_sender.clone(),
-    //     }
-    // }
-
     /// run
     ///
     ///
     ///
     ///
     pub async fn run(&mut self) {
-        while let Some(request) = self.command_receiver.recv().await {
-            let fetcher_api = self.fetcher_controller.clone();
+        while let Some(command) = self.command_receiver.recv().await {
+            let fetcher_controller = self.fetcher_controller.clone();
             let task_counter = self.task_counter.clone();
 
             tokio::spawn(async move {
                 task_counter.fetch_add(1, Ordering::Relaxed);
 
-                match request {
-                    Command::GetBlob(request) => Self::task_get_blob(fetcher_api, request).await,
-                    Command::PostBlob(request) => Self::task_post_blob(fetcher_api, request).await,
+                match command {
+                    Command::GetBlob(request) => Self::task_get_blob(fetcher_controller, request).await,
+                    Command::PostBlob(request) => Self::task_post_blob(fetcher_controller, request).await,
                 }
 
                 task_counter.fetch_sub(1, Ordering::Relaxed);
@@ -86,8 +74,8 @@ impl DataManager {
     ///
     ///
     ///
-    async fn task_get_blob(fetcher_api: fetcher::Api, request: get_blob::Request) {
-        let download_handle = fetcher_api.download_blob(request.blob_id).await;
+    async fn task_get_blob(fetcher_controller: fetcher::Api, request: get_blob::Request) {
+        let download_handle = fetcher_controller.download_blob(request.blob_id).await;
         let response = download_handle.recv().await;
 
         request
@@ -103,8 +91,8 @@ impl DataManager {
     ///
     ///
     ///
-    async fn task_post_blob(fetcher_api: fetcher::Api, request: post_blob::Request) {
-        let upload_handle = fetcher_api.upload_blob(request.data.clone()).await;
+    async fn task_post_blob(fetcher_controller: fetcher::Api, request: post_blob::Request) {
+        let upload_handle = fetcher_controller.upload_blob(request.data.clone()).await;
         let blob = upload_handle.recv().await.blob;
 
         request
@@ -267,7 +255,7 @@ mod tests {
             Arc::new(pleiades_api::Client::try_new("http://master.local/api/v0.5/").unwrap());
 
         // fetcher
-        let (mut fetcher, fetcher_api) = fetcher::Fetcher::new(client);
+        let (mut fetcher, fetcher_controller) = fetcher::Fetcher::new(client);
 
         tokio::spawn(async move {
             fetcher.run().await;
@@ -275,7 +263,7 @@ mod tests {
 
         // data manager
 
-        let (mut data_manager, api) = DataManager::new(fetcher_api);
+        let (mut data_manager, api) = DataManager::new(fetcher_controller);
 
         tokio::spawn(async move {
             data_manager.run().await;

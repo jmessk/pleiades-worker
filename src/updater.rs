@@ -63,19 +63,19 @@ impl Updater {
     /// run
     ///
     pub async fn run(&mut self) {
-        while let Some(request) = self.command_receiver.recv().await {
+        while let Some(command) = self.command_receiver.recv().await {
             // clone fields to bind
             let client = self.client.clone();
-            let data_manager_api = self.data_manager_controller.clone();
+            let data_manager_controller = self.data_manager_controller.clone();
             let task_counter = self.task_counter.clone();
 
             // new task
             tokio::spawn(async move {
                 task_counter.fetch_add(1, Ordering::Relaxed);
 
-                match request {
+                match command {
                     Command::FinishJob(request) => {
-                        Self::task_update_job(client, data_manager_api, request).await
+                        Self::task_update_job(client, data_manager_controller, request).await
                     }
                 }
 
@@ -90,14 +90,14 @@ impl Updater {
     ///
     async fn task_update_job(
         client: Arc<pleiades_api::Client>,
-        data_manager_api: data_manager::Controller,
+        data_manager_controller: data_manager::Controller,
         request: update::Request,
     ) {
         match request.job.status {
             JobStatus::Finished(output) => {
                 let output = output.unwrap_or(bytes::Bytes::new());
 
-                let post_handle = data_manager_api.post_blob(output).await;
+                let post_handle = data_manager_controller.post_blob(output).await;
                 let post_response = post_handle.recv().await;
 
                 let update_request = pleiades_api::api::job::update::Request::builder()
@@ -301,9 +301,9 @@ mod tests {
             Arc::new(pleiades_api::Client::try_new("http://192.168.1.47/api/v0.5/").unwrap());
 
         let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
-        let (mut data_manager, data_manager_api) = DataManager::new(fetcher_api);
-        let (mut contractor, api) = Contractor::new(client.clone(), data_manager_api.clone(), 16);
-        let (mut updater, _updater_api) = Updater::new(client.clone(), data_manager_api);
+        let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_api);
+        let (mut contractor, api) = Contractor::new(client.clone(), data_manager_controller.clone(), 16);
+        let (mut updater, _updater_api) = Updater::new(client.clone(), data_manager_controller);
 
         tokio::spawn(async move {
             fetcher.run().await;

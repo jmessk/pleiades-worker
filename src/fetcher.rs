@@ -17,7 +17,6 @@ pub struct Fetcher {
 
     /// interface to access this component
     ///
-    // command_sender: mpsc::Sender<Command>,
     command_receiver: mpsc::Receiver<Command>,
 
     /// number of jobs currently being contracted
@@ -42,23 +41,17 @@ impl Fetcher {
         (fetcher, api)
     }
 
-    // pub fn api(&self) -> Api {
-    //     Api {
-    //         command_sender: self.command_sender.clone(),
-    //     }
-    // }
-
     /// run
     ///
     pub async fn run(&mut self) {
-        while let Some(request) = self.command_receiver.recv().await {
+        while let Some(command) = self.command_receiver.recv().await {
             let client = self.client.clone();
             let task_counter = self.task_counter.clone();
 
             tokio::spawn(async move {
                 task_counter.fetch_add(1, Ordering::Relaxed);
 
-                match request {
+                match command {
                     Command::DownloadBlob(request) => {
                         Self::task_download_blob(client, request).await
                     }

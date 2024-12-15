@@ -7,9 +7,9 @@ use tokio::sync::mpsc;
 
 use crate::pleiades_type::{Job, JobStatus};
 use crate::runtime::{JsRuntime, Runtime as _};
-use crate::updater;
+use crate::{pending_manager, updater};
 
-/// Contractor
+/// Executor
 ///
 ///
 ///
@@ -22,6 +22,10 @@ pub struct Executor {
     /// updater
     ///
     updater_controller: updater::Controller,
+
+    /// pending_manager
+    ///
+    pending_manager_controller: pending_manager::Controller,
 
     /// max_queueing_time
     ///
@@ -39,7 +43,10 @@ impl Executor {
     ///
     ///
     ///
-    pub fn new(updater_controller: updater::Controller) -> (Self, Controller) {
+    pub fn new(
+        updater_controller: updater::Controller,
+        pending_manager_controller: pending_manager::Controller,
+    ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let max_queueing_time = Arc::new(Mutex::new(Duration::from_secs(0)));
@@ -47,6 +54,7 @@ impl Executor {
         let data_manager = Self {
             command_receiver,
             updater_controller,
+            pending_manager_controller,
             max_queueing_time: max_queueing_time.clone(),
             runtime: JsRuntime::init(),
         };
@@ -65,8 +73,8 @@ impl Executor {
     ///
     ///
     pub fn run(&mut self) {
-        while let Some(request) = self.command_receiver.blocking_recv() {
-            match request {
+        while let Some(command) = self.command_receiver.blocking_recv() {
+            match command {
                 Command::Enqueue(request) => self.task_process_job(request),
             }
         }
@@ -75,7 +83,7 @@ impl Executor {
     fn task_process_job(&mut self, request: enqueue::Request) {
         let job_remaining_time = request.job.remaining_time;
 
-        let processed_job = {
+        let mut processed_job = {
             // start measuring time
             let start = ThreadTime::now();
 
@@ -100,10 +108,21 @@ impl Executor {
             JobStatus::Finished(_) | JobStatus::Cancelled => {
                 self.updater_controller.update_job_nowait(processed_job);
             }
-            JobStatus::Pending(request) => {
-                todo!()
+            JobStatus::Pending(_) => {
+                if processed_job.is_timeout() {
+                    println!("Job is timeout");
+                    processed_job.cancel();
+                    self.updater_controller.update_job_nowait(processed_job);
+                } else {
+                    self.pending_manager_controller
+                        .register_nowait(processed_job);
+                }
             }
-            _ => {}
+            _ => {
+                processed_job.cancel();
+                self.updater_controller.update_job_nowait(processed_job);
+                unreachable!();
+            }
         }
     }
 }

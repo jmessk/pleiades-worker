@@ -20,10 +20,14 @@ pub struct Contractor {
 
     /// interface to access this component
     ///
-    // command_sender: mpsc::Sender<Request>,
     command_receiver: mpsc::Receiver<Command>,
 
+    /// semaphore
+    ///
     semaphore: Arc<tokio::sync::Semaphore>,
+
+    /// max_concurrency
+    ///
     max_concurrency: usize,
 }
 
@@ -63,15 +67,15 @@ impl Contractor {
     ///
     ///
     pub async fn run(&mut self) {
-        while let Some(request) = self.command_receiver.recv().await {
+        while let Some(command) = self.command_receiver.recv().await {
             let client = self.client.clone();
-            let data_manager_api = self.data_manager_controller.clone();
+            let data_manager_controller = self.data_manager_controller.clone();
             let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
             tokio::spawn(async move {
-                match request {
+                match command {
                     Command::Contract(request) => {
-                        Self::task_contract(client, data_manager_api, request).await
+                        Self::task_contract(client, data_manager_controller, request).await
                     }
                 }
                 drop(permit);
@@ -88,7 +92,7 @@ impl Contractor {
     ///
     async fn task_contract(
         client: Arc<pleiades_api::Client>,
-        data_manager_api: data_manager::Controller,
+        data_manager_controller: data_manager::Controller,
         request: contract::Request,
     ) {
         // Fetch a new job
@@ -146,8 +150,12 @@ impl Contractor {
 
         // download input and lambda code
         //
-        let get_input_handle = data_manager_api.get_blob(job_info.input.data_id).await;
-        let get_code_handle = data_manager_api.get_blob(job_info.lambda.data_id).await;
+        let get_input_handle = data_manager_controller
+            .get_blob(job_info.input.data_id)
+            .await;
+        let get_code_handle = data_manager_controller
+            .get_blob(job_info.lambda.data_id)
+            .await;
         //
         let input = get_input_handle.recv().await.blob;
         let code = get_code_handle.recv().await.blob;
@@ -366,9 +374,10 @@ mod tests {
             Arc::new(pleiades_api::Client::try_new("http://192.168.1.47/api/v0.5/").unwrap());
 
         let (mut _fetcher, fetcher_api) = fetcher::Fetcher::new(client.clone());
-        let (mut _data_manager, data_manager_api) = data_manager::DataManager::new(fetcher_api);
+        let (mut _data_manager, data_manager_controller) =
+            data_manager::DataManager::new(fetcher_api);
         let (mut contractor, contractor_api) =
-            Contractor::new(client.clone(), data_manager_api, 16);
+            Contractor::new(client.clone(), data_manager_controller, 16);
 
         tokio::spawn(async move {
             contractor.run().await;
