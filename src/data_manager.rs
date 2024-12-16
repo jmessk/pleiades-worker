@@ -180,12 +180,6 @@ pub enum Command {
     PostBlob(post_blob::Request),
 }
 
-// #[derive(Debug)]
-// pub enum Response {
-//     GetBlob { blob: Bytes },
-//     PostBlob { blob_id: String },
-// }
-
 pub mod get_blob {
     use super::*;
 

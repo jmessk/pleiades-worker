@@ -1,5 +1,4 @@
 use cpu_time::ThreadTime;
-use enqueue::Handle;
 use std::ops::{AddAssign, SubAssign};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -8,7 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::pleiades_type::{Job, JobStatus};
 use crate::runtime::{JsRuntime, Runtime as _};
-use crate::{pending_manager, scheduler, updater};
+use crate::{pending_manager, scheduler};
 
 /// Executor
 ///
@@ -45,7 +44,8 @@ impl Executor {
     ///
     ///
     ///
-    pub fn new(// updater_controller: updater::Controller,
+    pub fn new(
+        // updater_controller: updater::Controller,
         pending_manager_controller: pending_manager::Controller,
         scheduler_controller: scheduler::Controller,
     ) -> (Self, Controller) {
@@ -108,23 +108,25 @@ impl Executor {
         }
 
         match processed_job.status {
-            // JobStatus::Finished(_) | JobStatus::Cancelled => {
-            //     self.updater_controller.update_job_nowait(processed_job);
-            // }
+            JobStatus::Finished(_) | JobStatus::Cancelled => {
+                // self.updater_controller.update_job_nowait(processed_job);
+                self.scheduler_controller.enqueue_nowait(processed_job);
+            }
             JobStatus::Pending(_) => {
-                // if processed_job.is_timeout() {
-                //     println!("Job is timeout");
-                //     processed_job.cancel();
-                //     self.updater_controller.update_job_nowait(processed_job);
-                // } else {
-                //     self.pending_manager_controller
-                //         .register_nowait(processed_job);
-                // }
-                self.scheduler_controller.
+                if processed_job.is_timeout() {
+                    println!("Job is timeout");
+                    processed_job.cancel();
+                    // self.updater_controller.update_job_nowait(processed_job);
+                    self.scheduler_controller.enqueue_nowait(processed_job);
+                } else {
+                    self.pending_manager_controller
+                        .register_nowait(processed_job);
+                }
             }
             _ => {
                 processed_job.cancel();
                 // self.updater_controller.update_job_nowait(processed_job);
+                self.scheduler_controller.enqueue_nowait(processed_job);
                 unreachable!();
             }
         }

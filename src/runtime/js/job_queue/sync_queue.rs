@@ -30,6 +30,7 @@ impl JobQueue for SyncJobQueue {
         // dropped after calling `pop_front`.
         let mut next_job = self.0.borrow_mut().pop_front();
         while let Some(job) = next_job {
+            println!("run_jobs: running job loop");
             //
             if job.call(context).is_err() {
                 self.0.borrow_mut().clear();

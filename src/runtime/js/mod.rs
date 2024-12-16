@@ -125,7 +125,37 @@ mod tests {
             import { blob } from "pleiades"
 
             async function fetch(input) {
-                let blob = blob.get("12345");
+                let blob = await blob.get("12345");
+
+                return blob;
+            }
+
+            export default fetch;
+        "#;
+
+        let mut job = Job::default();
+        job.lambda.code.data = code.into();
+
+        let mut runtime = JsRuntime::init();
+
+        // start processing the job
+        let job = runtime.process(job);
+
+        if let JobStatus::Pending(RuntimeRequest::Blob(blob::Request::Get(blob_id))) = job.status {
+            assert_eq!(blob_id, "12345");
+        }
+    }
+
+    #[test]
+    fn test_promise() {
+        let code = r#"
+            async function fetch(input) {
+                new Promise((resolve) => {
+                    console.log("promise called");
+                    resolve();
+                }).then(() => {
+                    console.log("promise resolved");
+                });
 
                 return blob;
             }

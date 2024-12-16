@@ -11,6 +11,7 @@ use crate::{
     contractor::{self, contract},
     data_manager, executor,
     pleiades_type::{Job, JobStatus},
+    updater,
 };
 
 /// Scheduler
@@ -19,8 +20,6 @@ use crate::{
 ///
 ///
 pub struct Scheduler {
-    client: Arc<pleiades_api::Client>,
-
     /// interface to access this component
     ///
     command_receiver: mpsc::Receiver<Command>,
@@ -37,6 +36,8 @@ pub struct Scheduler {
     ///
     contractor_controller: contractor::Controller,
 
+    updater_controller: updater::Controller,
+
     /// executor_controller
     ///
     // executor_list: Vec<(executor::Controller, Duration)>,
@@ -46,9 +47,10 @@ pub struct Scheduler {
 impl Scheduler {
     /// new
     ///
+    ///
     pub fn new(
-        client: Arc<pleiades_api::Client>,
         contractor_controller: contractor::Controller,
+        updater_controller: updater::Controller,
         executor_controller_list: Vec<executor::Controller>,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(128);
@@ -66,11 +68,11 @@ impl Scheduler {
         //     .collect();
 
         let updater = Self {
-            client,
             command_receiver,
             task_counter: Arc::new(AtomicUsize::new(0)),
             scheduler_controller: controller.clone(),
             contractor_controller,
+            updater_controller,
             helper_list,
         };
 
@@ -80,7 +82,7 @@ impl Scheduler {
     /// run
     ///
     pub async fn run(&mut self) {
-        self.algorithm_1().await;
+        // self.algorithm_1().await;
 
         self.wait_for_shutdown().await;
     }
@@ -102,7 +104,6 @@ impl Scheduler {
             todo!()
         }
     }
-
 
     /// wait_for_shutdown
     ///
@@ -128,7 +129,7 @@ impl Scheduler {
         let response = handle.recv().await;
 
         if let Some(job) = response.contracted {
-            scheduler_controller.enqueue_assigned(job).await
+            scheduler_controller.enqueue(job).await
         }
     }
 }
@@ -146,22 +147,35 @@ pub struct Controller {
 impl Controller {
     /// enqueue_ready
     ///
-    pub async fn enqueue_ready(&self, job: Job) {
+    pub async fn enqueue(&self, job: Job) {
         let request = Command::Ready(ready::Request { job });
         self.command_sender.send(request).await.unwrap();
     }
 
-    /// enqueue_assigned
-    ///
-    pub async fn enqueue_assigned(&self, job: Job) {
-        let request = Command::Assigned(assigned::Request { job });
-        self.command_sender.send(request).await.unwrap();
+    pub fn enqueue_nowait(&self, job: Job) {
+        let request = Command::Ready(ready::Request { job });
+        self.command_sender.blocking_send(request).unwrap();
     }
+
+    // /// enqueue_assigned
+    // ///
+    // pub async fn enqueue_assigned(&self, job: Job) {
+    //     let request = Command::Assigned(assigned::Request { job });
+    //     self.command_sender.send(request).await.unwrap();
+    // }
+
+    // /// enqueue_pending
+    // ///
+    // pub async fn enqueue_pending(&self, job: Job) {
+    //     let request = Command::Assigned(assigned::Request { job });
+    //     self.command_sender.send(request).await.unwrap();
+    // }
 }
 
 pub enum Command {
     Ready(ready::Request),
-    Assigned(assigned::Request),
+    // Assigned(assigned::Request),
+    // Pending(pending::Request),
 }
 
 pub mod ready {
@@ -172,13 +186,21 @@ pub mod ready {
     }
 }
 
-pub mod assigned {
-    use super::*;
+// pub mod assigned {
+//     use super::*;
 
-    pub struct Request {
-        pub job: Job,
-    }
-}
+//     pub struct Request {
+//         pub job: Job,
+//     }
+// }
+
+// pub mod pending {
+//     use super::*;
+
+//     pub struct Request {
+//         pub job: Job,
+//     }
+// }
 
 pub mod contract_join_set {
     use super::*;
