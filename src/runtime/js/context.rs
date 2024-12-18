@@ -32,6 +32,7 @@ impl runtime::Context for JsContext {
         Self { context }
     }
 }
+
 impl JsContext {
     fn init_context() -> Context {
         Context::builder()
@@ -174,6 +175,7 @@ mod tests {
             async function fetch(input) {
                 console.log("fetch called");
                 let someData = await blob.get("12345");
+
                 console.log(someData);
 
                 return "test_output"; 

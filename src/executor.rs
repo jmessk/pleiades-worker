@@ -120,7 +120,7 @@ impl Executor {
                     self.scheduler_controller.enqueue_nowait(processed_job);
                 } else {
                     self.pending_manager_controller
-                        .register_nowait(processed_job);
+                        .enqueue_nowait(processed_job);
                 }
             }
             _ => {
