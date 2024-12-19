@@ -1,10 +1,15 @@
-use std::time::Duration;
-
 const ITERATION: usize = 10;
 
 #[tokio::main]
 async fn main() {
-    let client = pleiades::Client::try_new("http://master.local/api/v0.5/").unwrap();
+    // Load .env file
+    //
+    dotenvy::dotenv().expect(".env file not found");
+    let pleiades_url = std::env::var("PLEIADES_URL").expect("PLEIADES_URL must be set");
+    //
+    // /////
+
+    let client = pleiades::Client::try_new(&pleiades_url).unwrap();
 
     let lambda_blob = client
         .blob()

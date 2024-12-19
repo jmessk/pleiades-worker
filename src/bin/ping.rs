@@ -1,5 +1,12 @@
 #[tokio::main]
 async fn main() {
-    let client = pleiades_api::Client::try_new("http://192.168.1.47/api/v0.5/").unwrap();
+    // Load .env file
+    //
+    dotenvy::dotenv().expect(".env file not found");
+    let pleiades_url = std::env::var("PLEIADES_URL").expect("PLEIADES_URL must be set");
+    //
+    // /////
+
+    let client = pleiades_api::Client::try_new(&pleiades_url).unwrap();
     println!("{:?}", client.ping().await.unwrap());
 }

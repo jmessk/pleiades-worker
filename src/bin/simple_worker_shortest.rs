@@ -10,8 +10,15 @@ use tokio::{sync::mpsc, task::JoinSet};
 
 #[tokio::main]
 async fn main() {
+    // Load .env file
+    //
+    dotenvy::dotenv().expect(".env file not found");
+    let pleiades_url = std::env::var("PLEIADES_URL").expect("PLEIADES_URL must be set");
+    //
+    // /////
+
     let client =
-        Arc::new(pleiades_api::Client::try_new("http://pleiades.local/api/v0.5/").unwrap());
+        Arc::new(pleiades_api::Client::try_new(&pleiades_url).unwrap());
 
     let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
     let (mut data_manager, data_manager_api) = DataManager::new(fetcher_api);
@@ -41,8 +48,6 @@ async fn main() {
     let updater_loop = tokio::spawn(async move {
         updater_loop(updater_api, job_receiver).await;
     });
-
-    // job_generator(client).await;
 
     updater_loop.await.unwrap();
 
@@ -100,19 +105,5 @@ async fn updater_loop(
 
         updater_api.update_job(job).await;
         println!("job finished in {:?}", instant.elapsed());
-    }
-}
-
-async fn job_generator(client: Arc<pleiades_api::Client>) {
-    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(50));
-
-    for _ in 0..300 {
-        let client = client.clone();
-
-        tokio::spawn(async move {
-            client.generate_test_job().await.unwrap();
-        });
-
-        ticker.tick().await;
     }
 }
