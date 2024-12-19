@@ -1,0 +1,89 @@
+use std::sync::Arc;
+
+use pleiades_worker::{
+    executor::Executor, Contractor, DataManager, ExecutorManager, Fetcher, PendingManager,
+    Scheduler, Updater, WorkerIdManager,
+};
+use tokio::task::JoinSet;
+
+#[tokio::main]
+async fn main() {
+    // Load .env file
+    //
+    dotenvy::dotenv().expect(".env file not found");
+    let pleiades_url = std::env::var("PLEIADES_URL").expect("PLEIADES_URL must be set");
+    //
+    // /////
+
+    // Initialize components
+    //
+    let client = Arc::new(pleiades_api::Client::try_new(&pleiades_url).unwrap());
+
+    let (mut fetcher, fetcher_controller) = Fetcher::new(client.clone());
+    let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_controller);
+    let (mut contractor, contractor_controller) =
+        Contractor::new(client.clone(), data_manager_controller.clone(), 8);
+    let (mut updater, updater_controller) =
+        Updater::new(client.clone(), data_manager_controller.clone());
+    let (mut pending_manager, pending_manager_controller) =
+        PendingManager::new(data_manager_controller);
+    //
+    // /////
+
+    // Start components
+    //
+    let mut join_set = JoinSet::new();
+
+    join_set.spawn(async move {
+        fetcher.run().await;
+    });
+    join_set.spawn(async move {
+        data_manager.run().await;
+    });
+    join_set.spawn(async move {
+        contractor.run().await;
+    });
+    join_set.spawn(async move {
+        updater.run().await;
+    });
+    join_set.spawn(async move {
+        pending_manager.run().await;
+    });
+    //
+    // /////
+
+    // Initialize executor
+    //
+    let mut executor_manager_builder = ExecutorManager::builder();
+
+    for _ in 0..8 {
+        let (mut executor, executor_controller) = Executor::new();
+
+        executor_manager_builder.insert(executor_controller);
+
+        join_set.spawn_blocking(move || executor.run());
+    }
+
+    let executor_manager = executor_manager_builder.build().unwrap();
+    //
+    // /////
+
+    let worker_id_manager = WorkerIdManager::new(client).await;
+
+    let (mut scheduler, scheduler_controller) = Scheduler::new(
+        worker_id_manager,
+        contractor_controller,
+        updater_controller,
+        pending_manager_controller,
+        executor_manager,
+    );
+
+    join_set.spawn(async move {
+        scheduler.run().await;
+    });
+
+    tokio::signal::ctrl_c().await.unwrap();
+    scheduler_controller.signal_shutdown().await;
+
+    join_set.join_all().await;
+}

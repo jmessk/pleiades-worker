@@ -13,4 +13,7 @@ pub mod updater;
 pub use contractor::Contractor;
 pub use data_manager::DataManager;
 pub use fetcher::Fetcher;
+pub use helper::{ExecutorManager, WorkerIdManager};
+pub use pending_manager::PendingManager;
+pub use scheduler::Scheduler;
 pub use updater::Updater;

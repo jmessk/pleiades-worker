@@ -1,20 +1,15 @@
 pub mod policy;
 
-use boa_engine::job;
-use pleiades_api::api::worker;
-use std::{
-    collections::HashMap,
-    default,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 use tokio::sync::mpsc;
 
 use crate::{
-    contractor::{self, contract},
+    contractor, executor,
     helper::{ExecutorManager, WorkerIdManager},
+    pending_manager,
     pleiades_type::{Job, JobStatus},
     updater,
 };
@@ -49,9 +44,13 @@ pub struct Scheduler {
     ///
     updater_controller: updater::Controller,
 
+    /// pending_controller
+    ///
+    pending_manager_controller: pending_manager::Controller,
+
     /// executor_controller
     ///
-    executor_manager: Option<ExecutorManager>,
+    executor_manager: ExecutorManager,
 }
 
 impl Scheduler {
@@ -62,6 +61,8 @@ impl Scheduler {
         worker_id_manager: WorkerIdManager,
         contractor_controller: contractor::Controller,
         updater_controller: updater::Controller,
+        pending_manager_controller: pending_manager::Controller,
+        executor_manager: ExecutorManager,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(128);
 
@@ -74,99 +75,109 @@ impl Scheduler {
             scheduler_controller: controller.clone(),
             contractor_controller,
             updater_controller,
-            executor_manager: None,
+            pending_manager_controller,
+            executor_manager,
         };
 
         (updater, controller)
     }
 
     /// set_controller
-    pub fn set_controller(&mut self, executor_manager: ExecutorManager) {
-        self.executor_manager = Some(executor_manager);
-    }
+    // pub fn set_controller(&mut self, executor_manager: ExecutorManager) {
+    //     self.executor_manager = Some(executor_manager);
+    // }
 
     /// run
     ///
     ///
     pub async fn run(&mut self) {
-        let command_receiver = &mut self.command_receiver;
-        let worker_id_manager = &mut self.worker_id_manager;
-        let scheduler_controller = &mut self.scheduler_controller;
-        let contractor_controller = &mut self.contractor_controller;
-
-        let executor_manager = self
-            .executor_manager
-            .as_mut()
-            .expect("ExecutorManager is not set");
-
-        let updater_controller = &mut self.updater_controller;
-
-        Self::default_policy(
-            command_receiver,
-            worker_id_manager,
-            scheduler_controller,
-            contractor_controller,
-            updater_controller,
-            executor_manager,
-        )
-        .await;
-
-        self.wait_for_shutdown().await;
+        self.default_policy().await;
+        self.background_wait_shutdown().await;
     }
 
-    async fn default_policy(
-        command_receiver: &mut mpsc::Receiver<Command>,
-        worker_id_manager: &mut WorkerIdManager,
-        scheduler_controller: &mut Controller,
-        contractor_controller: &mut contractor::Controller,
-        updater_controller: &mut updater::Controller,
-        executor_manager: &mut ExecutorManager,
-    ) {
-        let default_worker_id = worker_id_manager.get("default").unwrap();
+    async fn default_policy(&mut self) {
+        let default_worker_id = self.worker_id_manager.get_default();
 
-        for _ in 0..executor_manager.num_executors() {
-            Self::contract_background(
-                &default_worker_id,
-                contractor_controller,
-                scheduler_controller,
-            )
-            .await;
+        for _ in 0..self.executor_manager.num_executors() {
+            self.background_contract(&default_worker_id).await;
         }
 
-        while let Some(command) = command_receiver.recv().await {
+        let mut shutdown_flag = false;
+
+        while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Enqueue(enqueue::Request { job }) => match job.status {
                     JobStatus::Assigned | JobStatus::Ready(_) => {
-                        let executor = executor_manager.current_shortest();
-                        executor.enqueue(job).await;
+                        println!("Job is assigned");
+
+                        let executor = self.executor_manager.current_shortest();
+                        self.background_execute(job, executor).await;
                     }
                     JobStatus::Finished(_) => {
-                        updater_controller.update_job(job).await;
                         println!("Job is finished");
+                        self.updater_controller.update_job(job).await;
+
+                        if shutdown_flag {
+                            continue;
+                        }
+
+                        self.background_contract(&default_worker_id).await;
+                    }
+                    JobStatus::Pending(_) => {
+                        println!("Job is pending");
+                        self.background_pend(job).await;
                     }
                     JobStatus::Cancelled => {
-                        updater_controller.update_job(job).await;
                         println!("Job is cancelled");
+                        self.updater_controller.update_job(job).await;
+
+                        if shutdown_flag {
+                            continue;
+                        }
+
+                        self.background_contract(&default_worker_id).await;
                     }
                     _ => unreachable!(),
                 },
-                Command::NoJob => {}
+                Command::NoJob => {
+                    println!("No job is available");
+
+                    if shutdown_flag {
+                        continue;
+                    }
+
+                    self.background_contract(&default_worker_id).await;
+                }
+                Command::Shutdown => {
+                    if !shutdown_flag {
+                        self.background_wait_shutdown().await;
+                        shutdown_flag = true;
+                    }
+                }
             }
 
-
+            if shutdown_flag && self.task_counter.load(Ordering::Relaxed) == 0 {
+                break;
+            }
         }
+
+        println!("Scheduler is shut down");
     }
 
     /// wait_for_shutdown
     ///
-    async fn wait_for_shutdown(&self) {
-        println!("Scheduler is shutting down");
+    async fn background_wait_shutdown(&self) {
+        let task_counter = self.task_counter.clone();
+        let scheduler_controller = self.scheduler_controller.clone();
 
-        while self.task_counter.load(Ordering::Relaxed) > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
+        tokio::spawn(async move {
+            println!("Scheduler is shutting down");
 
-        println!("Scheduler is shut down");
+            while task_counter.load(Ordering::Relaxed) > 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                scheduler_controller.signal_shutdown().await;
+            }
+        });
     }
 }
 
@@ -174,25 +185,61 @@ impl Scheduler {
 ///
 ///
 impl Scheduler {
-    /// task_contract_background
+    /// contract_background
     ///
     ///
-    async fn contract_background(
-        worker_id: &str,
-        contractor_controller: &contractor::Controller,
-        scheduler_controller: &Controller,
-    ) {
-        let handle = contractor_controller
+    async fn background_contract(&self, worker_id: &str) {
+        let handle = self
+            .contractor_controller
             .try_contract(worker_id.to_string())
             .await
             .unwrap();
-        let scheduler_controller = scheduler_controller.clone();
+
+        let scheduler_controller = self.scheduler_controller.clone();
+        let task_counter = self.task_counter.clone();
 
         tokio::spawn(async move {
+            task_counter.fetch_add(1, Ordering::Relaxed);
+
             let response = handle.recv().await;
-            if let Some(job) = response.contracted {
-                scheduler_controller.enqueue(job).await;
+            match response.contracted {
+                Some(job) => scheduler_controller.enqueue(job).await,
+                None => scheduler_controller.signal_no_job().await,
             }
+
+            task_counter.fetch_sub(1, Ordering::Relaxed);
+        });
+    }
+
+    async fn background_execute(&self, job: Job, executor_controller: &executor::Controller) {
+        let handle = executor_controller.register(job).await;
+
+        let scheduler_controller = self.scheduler_controller.clone();
+        let task_counter = self.task_counter.clone();
+
+        tokio::spawn(async move {
+            task_counter.fetch_add(1, Ordering::Relaxed);
+
+            let response = handle.response_receiver.await.unwrap();
+            scheduler_controller.enqueue(response.job).await;
+
+            task_counter.fetch_sub(1, Ordering::Relaxed);
+        });
+    }
+
+    async fn background_pend(&self, job: Job) {
+        let handle = self.pending_manager_controller.register(job).await;
+
+        let scheduler_controller = self.scheduler_controller.clone();
+        let task_counter = self.task_counter.clone();
+
+        tokio::spawn(async move {
+            task_counter.fetch_add(1, Ordering::Relaxed);
+
+            let response = handle.response_receiver.await.unwrap();
+            scheduler_controller.enqueue(response.job).await;
+
+            task_counter.fetch_sub(1, Ordering::Relaxed);
         });
     }
 }
@@ -225,6 +272,11 @@ impl Controller {
         self.command_sender.send(request).await.unwrap();
     }
 
+    pub async fn signal_shutdown(&self) {
+        let request = Command::Shutdown;
+        self.command_sender.send(request).await.unwrap();
+    }
+
     // /// enqueue_assigned
     // ///
     // pub async fn enqueue_assigned(&self, job: Job) {
@@ -245,6 +297,7 @@ pub enum Command {
     NoJob,
     // Assigned(assigned::Request),
     // Pending(pending::Request),
+    Shutdown,
 }
 
 pub mod enqueue {

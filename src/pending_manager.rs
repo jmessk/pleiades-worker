@@ -3,9 +3,9 @@ use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 use tokio::sync::mpsc;
 
+use crate::data_manager;
 use crate::pleiades_type::{Job, JobStatus};
 use crate::runtime::{blob, gpu, http, RuntimeRequest, RuntimeResponse};
-use crate::{data_manager, scheduler};
 
 /// PendingManager
 ///
@@ -23,7 +23,7 @@ pub struct PendingManager {
 
     /// scheduler_controller
     ///
-    scheduler_controller: Option<scheduler::Controller>,
+    // scheduler_controller: Option<scheduler::Controller>,
 
     /// data_manager_controller
     ///
@@ -46,7 +46,7 @@ impl PendingManager {
         let data_manager = Self {
             command_receiver,
             task_counter: Arc::new(AtomicUsize::new(0)),
-            scheduler_controller: None,
+            // scheduler_controller: None,
             data_manager_controller,
             http_client: reqwest::Client::new(),
         };
@@ -57,11 +57,11 @@ impl PendingManager {
     }
 
     /// set_controller
-    /// 
-    /// 
-    pub fn set_controller(&mut self, scheduler_controller: scheduler::Controller) {
-        self.scheduler_controller = Some(scheduler_controller);
-    }
+    ///
+    ///
+    // pub fn set_controller(&mut self, scheduler_controller: scheduler::Controller) {
+    //     self.scheduler_controller = Some(scheduler_controller);
+    // }
 
     /// run
     ///
@@ -69,112 +69,112 @@ impl PendingManager {
     ///
     ///
     pub async fn run(&mut self) {
-        let scheduler_controller = self
-            .scheduler_controller
-            .as_mut()
-            .expect("scheduler_controller must be set");
+        // let scheduler_controller = self
+        //     .scheduler_controller
+        //     .as_mut()
+        //     .expect("scheduler_controller must be set");
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
-                Command::Enqueue(request) => {
-                    let mut job = request.job;
+                // Command::Enqueue(request) => {
+                // let mut job = request.job;
 
-                    // extract request
-                    //
-                    let runtime_request = if let JobStatus::Pending(request) = job.status {
-                        request
-                    } else {
-                        println!("PendingManager: request must be pending");
-                        println!("unreachable");
-                        continue;
-                    };
-                    //
-                    // /////
+                // // extract request
+                // //
+                // let runtime_request = if let JobStatus::Pending(request) = job.status {
+                //     request
+                // } else {
+                //     println!("PendingManager: request must be pending");
+                //     println!("unreachable");
+                //     continue;
+                // };
+                // //
+                // // /////
 
-                    self.task_counter.fetch_add(1, Ordering::Relaxed);
+                // self.task_counter.fetch_add(1, Ordering::Relaxed);
 
-                    // clone to move
-                    let task_counter = self.task_counter.clone();
-                    let scheduler_controller = scheduler_controller.clone();
+                // // clone to move
+                // let task_counter = self.task_counter.clone();
+                // let scheduler_controller = scheduler_controller.clone();
 
-                    match runtime_request {
-                        // blob
-                        //
-                        //
-                        RuntimeRequest::Blob(blob::Request::Get(blob_id)) => {
-                            job.status = JobStatus::Resolving;
+                // match runtime_request {
+                //     // blob
+                //     //
+                //     //
+                //     RuntimeRequest::Blob(blob::Request::Get(blob_id)) => {
+                //         job.status = JobStatus::Resolving;
 
-                            let handle = self.data_manager_controller.get_blob(blob_id).await;
+                //         let handle = self.data_manager_controller.get_blob(blob_id).await;
 
-                            tokio::spawn(async move {
-                                Self::task_blob_get(handle, &mut job).await;
-                                scheduler_controller.enqueue(job).await;
+                //         tokio::spawn(async move {
+                //             Self::task_blob_get(handle, &mut job).await;
+                //             scheduler_controller.enqueue(job).await;
 
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
-                            });
-                        }
-                        RuntimeRequest::Blob(blob::Request::Post(data)) => {
-                            job.status = JobStatus::Resolving;
+                //             task_counter.fetch_sub(1, Ordering::Relaxed);
+                //         });
+                //     }
+                //     RuntimeRequest::Blob(blob::Request::Post(data)) => {
+                //         job.status = JobStatus::Resolving;
 
-                            let handle = self.data_manager_controller.post_blob(data).await;
+                //         let handle = self.data_manager_controller.post_blob(data).await;
 
-                            tokio::spawn(async move {
-                                Self::task_blob_post(handle, &mut job).await;
-                                scheduler_controller.enqueue(job).await;
+                //         tokio::spawn(async move {
+                //             Self::task_blob_post(handle, &mut job).await;
+                //             scheduler_controller.enqueue(job).await;
 
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
-                            });
-                        }
-                        //
-                        //
-                        // /////
+                //             task_counter.fetch_sub(1, Ordering::Relaxed);
+                //         });
+                //     }
+                //     //
+                //     //
+                //     // /////
 
-                        // gpu
-                        //
-                        //
-                        RuntimeRequest::Gpu(gpu::Request { data }) => {
-                            job.status = JobStatus::Resolving;
+                //     // gpu
+                //     //
+                //     //
+                //     RuntimeRequest::Gpu(gpu::Request { data }) => {
+                //         job.status = JobStatus::Resolving;
 
-                            tokio::spawn(async move {
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
-                            });
-                        }
-                        //
-                        //
-                        // /////
+                //         tokio::spawn(async move {
+                //             task_counter.fetch_sub(1, Ordering::Relaxed);
+                //         });
+                //     }
+                //     //
+                //     //
+                //     // /////
 
-                        // http
-                        //
-                        //
-                        RuntimeRequest::Http(http::Request::Get(url)) => {
-                            job.status = JobStatus::Resolving;
+                //     // http
+                //     //
+                //     //
+                //     RuntimeRequest::Http(http::Request::Get(url)) => {
+                //         job.status = JobStatus::Resolving;
 
-                            let client = self.http_client.clone();
+                //         let client = self.http_client.clone();
 
-                            tokio::spawn(async move {
-                                Self::task_http_get(client, &mut job, url.clone()).await;
-                                scheduler_controller.enqueue(job).await;
+                //         tokio::spawn(async move {
+                //             Self::task_http_get(client, &mut job, url.clone()).await;
+                //             scheduler_controller.enqueue(job).await;
 
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
-                            });
-                        }
-                        RuntimeRequest::Http(http::Request::Post { url, body }) => {
-                            job.status = JobStatus::Resolving;
+                //             task_counter.fetch_sub(1, Ordering::Relaxed);
+                //         });
+                //     }
+                //     RuntimeRequest::Http(http::Request::Post { url, body }) => {
+                //         job.status = JobStatus::Resolving;
 
-                            let client = self.http_client.clone();
+                //         let client = self.http_client.clone();
 
-                            tokio::spawn(async move {
-                                Self::task_http_post(client, &mut job, url.clone(), body).await;
+                //         tokio::spawn(async move {
+                //             Self::task_http_post(client, &mut job, url.clone(), body).await;
 
-                                scheduler_controller.enqueue(job).await;
+                //             scheduler_controller.enqueue(job).await;
 
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
-                            });
-                        } //
-                          //
-                          // /////
-                    }
-                }
+                //             task_counter.fetch_sub(1, Ordering::Relaxed);
+                //         });
+                //     } //
+                //       //
+                //       // /////
+                // }
+                // }
                 //
                 //
                 //
@@ -410,20 +410,20 @@ impl Controller {
     ///
     ///
     ///
-    pub async fn enqueue(&self, job: Job) {
-        let request = Command::Enqueue(enqueue::Request { job });
-        self.command_sender.send(request).await.unwrap();
-    }
+    // pub async fn enqueue(&self, job: Job) {
+    //     let request = Command::Enqueue(enqueue::Request { job });
+    //     self.command_sender.send(request).await.unwrap();
+    // }
 
     /// register_nowait
     ///
     ///
     ///
     ///
-    pub fn enqueue_nowait(&self, job: Job) {
-        let request = Command::Enqueue(enqueue::Request { job });
-        self.command_sender.blocking_send(request).unwrap();
-    }
+    // pub fn enqueue_nowait(&self, job: Job) {
+    //     let request = Command::Enqueue(enqueue::Request { job });
+    //     self.command_sender.blocking_send(request).unwrap();
+    // }
 
     /// register_handle
     ///
@@ -448,17 +448,17 @@ impl Controller {
 ///
 ///
 pub enum Command {
-    Enqueue(enqueue::Request),
+    // Enqueue(enqueue::Request),
     Register(register::Request),
 }
 
-pub mod enqueue {
-    use super::*;
+// pub mod enqueue {
+//     use super::*;
 
-    pub struct Request {
-        pub job: Job,
-    }
-}
+//     pub struct Request {
+//         pub job: Job,
+//     }
+// }
 
 pub mod register {
     use super::*;

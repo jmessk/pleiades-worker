@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::pleiades_type::{Job, JobStatus};
 use crate::runtime::{JsRuntime, Runtime as _, RuntimeContext};
-use crate::{pending_manager, scheduler};
+use crate::scheduler;
 
 /// Executor
 ///
@@ -22,11 +22,11 @@ pub struct Executor {
     /// updater
     ///
     // updater_controller: updater::Controller,
-    scheduler_controller: Option<scheduler::Controller>,
+    // scheduler_controller: Option<scheduler::Controller>,
 
     /// pending_manager
     ///
-    pending_manager_controller: Option<pending_manager::Controller>,
+    // pending_manager_controller: Option<pending_manager::Controller>,
 
     /// max_queueing_time
     ///
@@ -53,8 +53,8 @@ impl Executor {
 
         let data_manager = Self {
             command_receiver,
-            scheduler_controller: None,
-            pending_manager_controller: None,
+            // scheduler_controller: None,
+            // pending_manager_controller: None,
             max_queueing_time: max_queueing_time.clone(),
             runtime: JsRuntime::init(),
         };
@@ -68,16 +68,16 @@ impl Executor {
     }
 
     /// set_controller
-    /// 
-    /// 
-    pub fn set_controller(
-        &mut self,
-        scheduler_controller: scheduler::Controller,
-        pending_manager_controller: pending_manager::Controller,
-    ) {
-        self.scheduler_controller = Some(scheduler_controller);
-        self.pending_manager_controller = Some(pending_manager_controller);
-    }
+    ///
+    ///
+    // pub fn set_controller(
+    //     &mut self,
+    //     scheduler_controller: scheduler::Controller,
+    //     pending_manager_controller: pending_manager::Controller,
+    // ) {
+    //     self.scheduler_controller = Some(scheduler_controller);
+    //     self.pending_manager_controller = Some(pending_manager_controller);
+    // }
 
     /// run
     ///
@@ -87,21 +87,21 @@ impl Executor {
     pub fn run(&mut self) {
         while let Some(command) = self.command_receiver.blocking_recv() {
             match command {
-                Command::Enqueue(request) => self.task_execute_job(request),
+                Command::Register(request) => self.task_execute_job(request),
             }
         }
     }
 
-    fn task_execute_job(&mut self, request: enqueue::Request) {
-        let scheduler_controller = self
-            .scheduler_controller
-            .as_ref()
-            .expect("SchedulerController is not set");
+    fn task_execute_job(&mut self, request: register::Request) {
+        // let scheduler_controller = self
+        //     .scheduler_controller
+        //     .as_ref()
+        //     .expect("SchedulerController is not set");
 
-        let pending_manager_controller = self
-            .pending_manager_controller
-            .as_ref()
-            .expect("PendingManagerController is not set");
+        // let pending_manager_controller = self
+        //     .pending_manager_controller
+        //     .as_ref()
+        //     .expect("PendingManagerController is not set");
 
         let mut job = request.job;
 
@@ -110,10 +110,18 @@ impl Executor {
                 if self
                     .runtime
                     .create_context(&job.lambda, &job.input)
+                    .inspect_err(|e| println!("Executor: {}", e))
                     .is_err()
                 {
+                    println!("Executor: Job is cancelled");
+
                     job.cancel();
-                    scheduler_controller.enqueue_nowait(job);
+                    // scheduler_controller.enqueue_nowait(job);
+                    request
+                        .response_sender
+                        .send(register::Response { job })
+                        .unwrap();
+
                     return;
                 }
             }
@@ -166,30 +174,46 @@ impl Executor {
             None => unreachable!(),
         };
 
-        match job_status {
-            JobStatus::Finished(output) => {
-                let job = Job {
-                    status: JobStatus::Finished(output),
-                    context: Some(RuntimeContext::JavaScript(context)),
-                    ..job
-                };
+        let job = Job {
+            status: job_status,
+            context: Some(RuntimeContext::JavaScript(context)),
+            ..job
+        };
 
-                scheduler_controller.enqueue_nowait(job);
-            }
-            JobStatus::Pending(request) if !job.is_timeout() => {
-                let job = Job {
-                    status: JobStatus::Pending(request),
-                    context: Some(RuntimeContext::JavaScript(context)),
-                    ..job
-                };
+        request
+            .response_sender
+            .send(register::Response { job })
+            .unwrap();
 
-                pending_manager_controller.enqueue_nowait(job);
-            }
-            _ => {
-                job.cancel();
-                scheduler_controller.enqueue_nowait(job);
-            }
-        }
+        // self.scheduler_controller
+        //     .as_mut()
+        //     .unwrap()
+        //     .enqueue_nowait(job);
+
+        // match job_status {
+        //     JobStatus::Finished(output) => {
+        //         let job = Job {
+        //             status: JobStatus::Finished(output),
+        //             context: Some(RuntimeContext::JavaScript(context)),
+        //             ..job
+        //         };
+
+        //         scheduler_controller.enqueue_nowait(job);
+        //     }
+        //     JobStatus::Pending(request) if !job.is_timeout() => {
+        //         let job = Job {
+        //             status: JobStatus::Pending(request),
+        //             context: Some(RuntimeContext::JavaScript(context)),
+        //             ..job
+        //         };
+
+        //         pending_manager_controller.enqueue_nowait(job);
+        //     }
+        //     _ => {
+        //         job.cancel();
+        //         scheduler_controller.enqueue_nowait(job);
+        //     }
+        // }
 
         // let job_remaining_time = request.job.remaining_time;
 
@@ -259,22 +283,10 @@ impl Controller {
         *self.max_queueing_time.lock().unwrap()
     }
 
-    /// get_blob
-    ///
-    ///
-    pub async fn enqueue(&self, job: Job) {
-        {
-            self.max_queueing_time
-                .lock()
-                .unwrap()
-                .add_assign(job.remaining_time);
-        }
-
-        let request = Command::Enqueue(enqueue::Request { job });
-        self.command_sender.send(request).await.unwrap();
-    }
-
-    // pub async fn register(&self, job: Job) -> register::Handle {
+    // /// get_blob
+    // ///
+    // ///
+    // pub async fn enqueue(&self, job: Job) {
     //     {
     //         self.max_queueing_time
     //             .lock()
@@ -282,17 +294,29 @@ impl Controller {
     //             .add_assign(job.remaining_time);
     //     }
 
-    //     let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
-
-    //     let request = Command::Register(register::Request {
-    //         response_sender,
-    //         job,
-    //     });
-
+    //     let request = Command::Enqueue(enqueue::Request { job });
     //     self.command_sender.send(request).await.unwrap();
-
-    //     register::Handle { response_receiver }
     // }
+
+    pub async fn register(&self, job: Job) -> register::Handle {
+        {
+            self.max_queueing_time
+                .lock()
+                .unwrap()
+                .add_assign(job.remaining_time);
+        }
+
+        let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
+
+        let request = Command::Register(register::Request {
+            response_sender,
+            job,
+        });
+
+        self.command_sender.send(request).await.unwrap();
+
+        register::Handle { response_receiver }
+    }
 }
 
 /// Command
@@ -301,18 +325,18 @@ impl Controller {
 ///
 ///
 pub enum Command {
-    Enqueue(enqueue::Request),
-    // Register(register::Request),
+    // Enqueue(enqueue::Request),
+    Register(register::Request),
 }
 
-pub mod enqueue {
+// pub mod enqueue {
 
-    use super::*;
+//     use super::*;
 
-    pub struct Request {
-        pub job: Job,
-    }
-}
+//     pub struct Request {
+//         pub job: Job,
+//     }
+// }
 
 pub mod register {
     use super::*;
@@ -326,6 +350,7 @@ pub mod register {
         pub job: Job,
     }
 
+    #[derive(Debug)]
     pub struct Response {
         pub job: Job,
     }

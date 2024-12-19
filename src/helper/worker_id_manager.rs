@@ -1,12 +1,12 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 pub struct WorkerIdManager {
-    pub client: pleiades_api::Client,
+    pub client: Arc<pleiades_api::Client>,
     pub set: HashMap<String, String>,
 }
 
 impl WorkerIdManager {
-    pub async fn new(client: pleiades_api::Client) -> Self {
+    pub async fn new(client: Arc<pleiades_api::Client>) -> Self {
         let mut manager = Self {
             client,
             set: HashMap::new(),
@@ -33,5 +33,9 @@ impl WorkerIdManager {
 
     pub fn get(&self, name: &str) -> Option<String> {
         self.set.get(name).cloned()
+    }
+
+    pub fn get_default(&self) -> String {
+        self.get("default").unwrap()
     }
 }

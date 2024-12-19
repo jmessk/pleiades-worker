@@ -9,15 +9,11 @@ pub struct ExecutorManager {
 
 impl ExecutorManager {
     pub fn builder() -> ExecutorManagerBuilder {
-        ExecutorManagerBuilder::new()
+        ExecutorManagerBuilder::default()
     }
 
     pub fn num_executors(&self) -> usize {
         self.list.len()
-    }
-
-    pub fn insert(&mut self, controller: executor::Controller) {
-        self.list.push((controller, Duration::from_secs(0)));
     }
 
     pub fn current_shortest(&self) -> &executor::Controller {
@@ -45,15 +41,12 @@ impl ExecutorManager {
     }
 }
 
+#[derive(Default)]
 pub struct ExecutorManagerBuilder {
     list: Vec<executor::Controller>,
 }
 
 impl ExecutorManagerBuilder {
-    pub fn new() -> Self {
-        Self { list: Vec::new() }
-    }
-
     pub fn insert(&mut self, controller: executor::Controller) {
         self.list.push(controller);
     }
