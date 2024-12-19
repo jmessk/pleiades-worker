@@ -1,4 +1,3 @@
-use boa_engine::context;
 use cpu_time::ThreadTime;
 use std::ops::{AddAssign, SubAssign};
 use std::sync::Arc;
@@ -89,7 +88,15 @@ impl Executor {
 
         match job.status {
             JobStatus::Assigned => {
-                self.runtime.create_context(&job.lambda, &job.input);
+                if self
+                    .runtime
+                    .create_context(&job.lambda, &job.input)
+                    .is_err()
+                {
+                    job.cancel();
+                    self.scheduler_controller.enqueue_nowait(job);
+                    return;
+                }
             }
             JobStatus::Ready(response) => {
                 let context = match job.context {
@@ -98,7 +105,7 @@ impl Executor {
                 };
 
                 self.runtime.set_context(context);
-                self.runtime.set_runtime_response(response);
+                self.runtime.set_runtime_response(response).unwrap();
             }
             _ => unreachable!(),
         }

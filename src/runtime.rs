@@ -1,8 +1,7 @@
-use boa_engine::context;
 use bytes::Bytes;
 use std::fmt::Debug;
 
-use crate::pleiades_type::{Blob, Job, JobStatus, Lambda};
+use crate::pleiades_type::{Blob, JobStatus, Lambda};
 
 mod javascript;
 mod python;

@@ -7,8 +7,8 @@ mod module;
 
 pub use context::JsContext;
 
-use crate::pleiades_type::{Blob, Job, JobStatus, Lambda};
-use crate::runtime::{javascript, Context, Runtime, RuntimeContext};
+use crate::pleiades_type::{Blob, JobStatus, Lambda};
+use crate::runtime::{Context, Runtime};
 
 use super::RuntimeResponse;
 
@@ -134,6 +134,7 @@ impl Runtime for JsRuntime {
 mod tests {
     use bytes::Bytes;
 
+    use crate::pleiades_type::{Blob, Job, JobStatus};
     use crate::runtime::{blob, RuntimeRequest};
 
     use super::*;

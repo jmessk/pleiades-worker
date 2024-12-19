@@ -6,7 +6,12 @@ const ITERATION: usize = 100;
 async fn main() {
     let client = pleiades::Client::try_new("http://pleiades.local/api/v0.5/").unwrap();
 
-    let lambda_blob = client.blob().new("test_lambda").await.unwrap();
+    let lambda_blob = client
+        .blob()
+        .new(include_bytes!("./script/get-blob.js").as_slice())
+        .await
+        .unwrap();
+
     let lambda = lambda_blob.into_lambda("pleiades+example").await.unwrap();
 
     let input = client
@@ -28,9 +33,7 @@ async fn main() {
             let start = std::time::Instant::now();
             let job = lambda.invoke(input, None).await.unwrap();
 
-            let output = job
-                .wait_finished(std::time::Duration::from_secs(10))
-                .await;
+            let output = job.wait_finished(std::time::Duration::from_secs(10)).await;
 
             match output {
                 Ok(_) => println!("job finished in {:?}", start.elapsed()),

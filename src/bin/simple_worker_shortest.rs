@@ -42,6 +42,8 @@ async fn main() {
         updater_loop(updater_api, job_receiver).await;
     });
 
+    // job_generator(client).await;
+
     updater_loop.await.unwrap();
 
     fetcher.await.unwrap();
@@ -98,5 +100,19 @@ async fn updater_loop(
 
         updater_api.update_job(job).await;
         println!("job finished in {:?}", instant.elapsed());
+    }
+}
+
+async fn job_generator(client: Arc<pleiades_api::Client>) {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(50));
+
+    for _ in 0..300 {
+        let client = client.clone();
+
+        tokio::spawn(async move {
+            client.generate_test_job().await.unwrap();
+        });
+
+        ticker.tick().await;
     }
 }

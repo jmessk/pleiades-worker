@@ -7,11 +7,11 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{sync::mpsc, task::JoinSet};
+use tokio::sync::mpsc;
 
 use crate::{
     contractor::{self, contract},
-    data_manager, executor,
+    executor,
     pleiades_type::{Job, JobStatus},
     updater,
 };
@@ -251,7 +251,7 @@ pub mod contract_join_set {
 }
 
 #[derive(Default)]
-struct ExecutorManager {
+pub struct ExecutorManager {
     list: Vec<(executor::Controller, Duration)>,
 }
 
