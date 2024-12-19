@@ -163,7 +163,7 @@ impl Contractor {
         let job = Job {
             id: job_id,
             status: JobStatus::Assigned,
-            remaining_time: Duration::from_secs(0),
+            remaining_time: Duration::from_secs(10),
             context: None,
             lambda: Box::new(Lambda {
                 id: job_info.lambda.lambda_id,

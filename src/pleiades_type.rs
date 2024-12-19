@@ -98,6 +98,8 @@ impl Job {
     ///
     pub fn cancel(&mut self) {
         self.status = JobStatus::Cancelled;
+
+        println!("Job is cancelled: {:?}", self);
     }
 }
 

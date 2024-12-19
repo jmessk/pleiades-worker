@@ -113,8 +113,6 @@ impl Executor {
                     .inspect_err(|e| println!("Executor: {}", e))
                     .is_err()
                 {
-                    println!("Executor: Job is cancelled");
-
                     job.cancel();
                     // scheduler_controller.enqueue_nowait(job);
                     request
