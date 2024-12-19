@@ -10,8 +10,14 @@ use tokio::{sync::mpsc, task::JoinSet};
 
 #[tokio::main]
 async fn main() {
-    let client =
-        Arc::new(pleiades_api::Client::try_new("http://pleiades.local/api/v0.5/").unwrap());
+    // Load .env file
+    //
+    dotenvy::dotenv().expect(".env file not found");
+    let pleiades_url = std::env::var("PLEIADES_URL").expect("PLEIADES_URL must be set");
+    //
+    // /////
+
+    let client = Arc::new(pleiades_api::Client::try_new(&pleiades_url).unwrap());
 
     let (mut fetcher, fetcher_controller) = Fetcher::new(client.clone());
     let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_controller);
