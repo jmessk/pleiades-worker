@@ -16,6 +16,7 @@ pollster = "0.4.0"
 cpu-time = "1.0.0"
 reqwest = "0.12.9"
 tracing = "0.1.41"
+dotenvy = "0.15.7"
 
 [dev-dependencies]
 criterion = "0.5.1"
