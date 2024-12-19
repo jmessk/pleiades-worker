@@ -1,16 +1,23 @@
+use boa_engine::context;
 use bytes::Bytes;
 use std::fmt::Debug;
 
-use crate::pleiades_type::Job;
+use crate::pleiades_type::{Blob, Job, JobStatus, Lambda};
 
-mod js;
+mod javascript;
 mod python;
 
-pub use js::JsRuntime;
+pub use javascript::JsRuntime;
 
 pub trait Runtime {
+    type Context: Context;
+
     fn init() -> Self;
-    fn process(&mut self, job: Job) -> Job;
+    fn create_context(&self, lambda: &Lambda, input: &Blob) -> anyhow::Result<Self::Context>;
+    fn set_context(&mut self, context: Self::Context);
+    fn get_context(&mut self) -> Option<Self::Context>;
+    fn set_runtime_response(&mut self, runtime_response: RuntimeResponse) -> anyhow::Result<()>;
+    fn execute(&mut self) -> anyhow::Result<JobStatus>;
 }
 
 pub trait Context {
@@ -19,7 +26,7 @@ pub trait Context {
 
 #[derive(Debug)]
 pub enum RuntimeContext {
-    JavaScript(Box<js::JsContext>),
+    JavaScript(javascript::JsContext),
     Python,
 }
 
@@ -29,7 +36,7 @@ pub enum RuntimeContext {
 ///
 ///
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RuntimeRequest {
     Gpu(gpu::Request),
     Blob(blob::Request),
@@ -41,7 +48,7 @@ pub enum RuntimeRequest {
 ///
 ///
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RuntimeResponse {
     Gpu(gpu::Response),
     Blob(blob::Response),
@@ -53,13 +60,13 @@ pub mod blob {
 
     use super::*;
 
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq, Eq)]
     pub enum Request {
         Get(String),
         Post(Bytes),
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq, Eq)]
     pub enum Response {
         Get(Option<Blob>),
         Post(Blob),
@@ -69,12 +76,12 @@ pub mod blob {
 pub mod gpu {
     use super::*;
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, PartialEq, Eq)]
     pub struct Request {
         pub data: Bytes,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, PartialEq, Eq)]
     pub struct Response {
         pub data: Bytes,
     }
@@ -83,13 +90,13 @@ pub mod gpu {
 pub mod http {
     use super::*;
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, PartialEq, Eq)]
     pub enum Request {
         Get(String),
         Post { url: String, body: Bytes },
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, PartialEq, Eq)]
     pub enum Response {
         Get(Option<Bytes>),
         Post(Option<Bytes>),

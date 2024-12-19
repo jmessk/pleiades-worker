@@ -3,14 +3,14 @@ use boa_engine::{
 };
 use bytes::Bytes;
 
-use crate::runtime::js::host_defined::{HostDefined, UserInput, UserOutput};
+use crate::runtime::javascript::host_defined::{HostDefined, UserInput, UserOutput};
 
 pub fn get_user_input(
     _this: &JsValue,
     _args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    UserInput::get_and_remove_from_context(context.realm())
+    UserInput::extract(context.realm())
         .map(|input| {
             let array = JsUint8Array::from_iter(input.data, context)?;
             Ok(JsValue::from(array))
@@ -41,7 +41,7 @@ pub fn set_user_output(
     //     .realm()
     //     .host_defined_mut()
     //     .insert(host_defined::user_output::UserOutput { data });
-    UserOutput { data }.insert_into_context(context.realm());
+    UserOutput { data }.insert(context.realm());
 
     Ok(JsValue::undefined())
 }

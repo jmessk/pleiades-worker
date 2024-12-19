@@ -1,3 +1,4 @@
+use boa_engine::context;
 use cpu_time::ThreadTime;
 use std::ops::{AddAssign, SubAssign};
 use std::sync::Arc;
@@ -6,7 +7,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::pleiades_type::{Job, JobStatus};
-use crate::runtime::{JsRuntime, Runtime as _};
+use crate::runtime::{JsRuntime, Runtime as _, RuntimeContext};
 use crate::{pending_manager, scheduler};
 
 /// Executor
@@ -78,25 +79,49 @@ impl Executor {
     pub fn run(&mut self) {
         while let Some(command) = self.command_receiver.blocking_recv() {
             match command {
-                Command::Enqueue(request) => self.task_process_job(request),
+                Command::Enqueue(request) => self.task_execute_job(request),
             }
         }
     }
 
-    fn task_process_job(&mut self, request: enqueue::Request) {
-        let job_remaining_time = request.job.remaining_time;
+    fn task_execute_job(&mut self, request: enqueue::Request) {
+        let mut job = request.job;
 
-        let mut processed_job = {
+        match job.status {
+            JobStatus::Assigned => {
+                self.runtime.create_context(&job.lambda, &job.input);
+            }
+            JobStatus::Ready(response) => {
+                let context = match job.context {
+                    Some(RuntimeContext::JavaScript(context)) => context,
+                    _ => unreachable!(),
+                };
+
+                self.runtime.set_context(context);
+                self.runtime.set_runtime_response(response);
+            }
+            _ => unreachable!(),
+        }
+
+        let mut job = Job {
+            status: JobStatus::Running,
+            context: None,
+            ..job
+        };
+
+        let job_remaining_time = job.remaining_time;
+
+        let job_status = {
             // start measuring time
             let start = ThreadTime::now();
 
             // execute job with runtime
-            let mut processed_job = self.runtime.process(request.job);
+            let job_status = self.runtime.execute().unwrap();
 
             // stop measuring time
-            processed_job.sub_remaining_time(start.elapsed());
+            job.sub_remaining_time(start.elapsed());
 
-            processed_job
+            job_status
         };
 
         {
@@ -107,29 +132,82 @@ impl Executor {
                 .sub_assign(job_remaining_time);
         }
 
-        match processed_job.status {
-            JobStatus::Finished(_) | JobStatus::Cancelled => {
-                // self.updater_controller.update_job_nowait(processed_job);
-                self.scheduler_controller.enqueue_nowait(processed_job);
+        let context = match self.runtime.get_context() {
+            Some(context) => context,
+            None => unreachable!(),
+        };
+
+        match job_status {
+            JobStatus::Finished(output) => {
+                let job = Job {
+                    status: JobStatus::Finished(output),
+                    context: Some(RuntimeContext::JavaScript(context)),
+                    ..job
+                };
+
+                self.scheduler_controller.enqueue_nowait(job);
             }
-            JobStatus::Pending(_) => {
-                if processed_job.is_timeout() {
-                    println!("Job is timeout");
-                    processed_job.cancel();
-                    // self.updater_controller.update_job_nowait(processed_job);
-                    self.scheduler_controller.enqueue_nowait(processed_job);
-                } else {
-                    self.pending_manager_controller
-                        .enqueue_nowait(processed_job);
-                }
+            JobStatus::Pending(request) if !job.is_timeout() => {
+                let job = Job {
+                    status: JobStatus::Pending(request),
+                    context: Some(RuntimeContext::JavaScript(context)),
+                    ..job
+                };
+
+                self.pending_manager_controller.enqueue_nowait(job);
             }
             _ => {
-                processed_job.cancel();
-                // self.updater_controller.update_job_nowait(processed_job);
-                self.scheduler_controller.enqueue_nowait(processed_job);
-                unreachable!();
+                job.cancel();
+                self.scheduler_controller.enqueue_nowait(job);
             }
         }
+
+        // let job_remaining_time = request.job.remaining_time;
+
+        // let mut processed_job = {
+        //     // start measuring time
+        //     let start = ThreadTime::now();
+
+        //     // execute job with runtime
+        //     let mut processed_job = self.runtime.execute(request.job);
+
+        //     // stop measuring time
+        //     processed_job.sub_remaining_time(start.elapsed());
+
+        //     processed_job
+        // };
+
+        // {
+        //     // update max_queueing_time
+        //     self.max_queueing_time
+        //         .lock()
+        //         .unwrap()
+        //         .sub_assign(job_remaining_time);
+        // }
+
+        // match processed_job.status {
+        //     JobStatus::Finished(_) | JobStatus::Cancelled => {
+        //         // self.updater_controller.update_job_nowait(processed_job);
+        //         self.scheduler_controller.enqueue_nowait(processed_job);
+        //     }
+        //     JobStatus::Pending(_) => {
+        //         if processed_job.is_timeout() {
+        //             println!("Job is timeout");
+        //             processed_job.cancel();
+        //             // self.updater_controller.update_job_nowait(processed_job);
+        //             self.scheduler_controller.enqueue_nowait(processed_job);
+        //         } else {
+        //             self.pending_manager_controller
+        //                 .enqueue_nowait(processed_job);
+        //         }
+        //     }
+        //     _ => {
+        //         processed_job.cancel();
+        //         // self.updater_controller.update_job_nowait(processed_job);
+        //         self.scheduler_controller.enqueue_nowait(processed_job);
+        //         unreachable!();
+        //     }
+        // }
     }
 }
 
@@ -145,10 +223,17 @@ pub struct Controller {
 }
 
 impl Controller {
+    /// get_max_queueing_time
+    ///
+    ///
+    pub fn max_queueing_time(&self) -> Duration {
+        *self.max_queueing_time.lock().unwrap()
+    }
+
     /// get_blob
     ///
     ///
-    pub async fn enqueue(&self, job: Job) -> enqueue::Handle {
+    pub async fn enqueue(&self, job: Job) {
         {
             self.max_queueing_time
                 .lock()
@@ -156,24 +241,29 @@ impl Controller {
                 .add_assign(job.remaining_time);
         }
 
-        let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
-
-        let request = Command::Enqueue(enqueue::Request {
-            job,
-            response_sender,
-        });
-
+        let request = Command::Enqueue(enqueue::Request { job });
         self.command_sender.send(request).await.unwrap();
-
-        enqueue::Handle { response_receiver }
     }
 
-    /// get_max_queueing_time
-    ///
-    ///
-    pub fn max_queueing_time(&self) -> Duration {
-        *self.max_queueing_time.lock().unwrap()
-    }
+    // pub async fn register(&self, job: Job) -> register::Handle {
+    //     {
+    //         self.max_queueing_time
+    //             .lock()
+    //             .unwrap()
+    //             .add_assign(job.remaining_time);
+    //     }
+
+    //     let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
+
+    //     let request = Command::Register(register::Request {
+    //         response_sender,
+    //         job,
+    //     });
+
+    //     self.command_sender.send(request).await.unwrap();
+
+    //     register::Handle { response_receiver }
+    // }
 }
 
 /// Command
@@ -183,19 +273,27 @@ impl Controller {
 ///
 pub enum Command {
     Enqueue(enqueue::Request),
+    // Register(register::Request),
 }
 
 pub mod enqueue {
-    use tokio::sync::oneshot;
 
     use super::*;
 
+    pub struct Request {
+        pub job: Job,
+    }
+}
+
+pub mod register {
+    use super::*;
+
     pub struct Handle {
-        pub response_receiver: oneshot::Receiver<Response>,
+        pub response_receiver: tokio::sync::oneshot::Receiver<Response>,
     }
 
     pub struct Request {
-        pub response_sender: oneshot::Sender<Response>,
+        pub response_sender: tokio::sync::oneshot::Sender<Response>,
         pub job: Job,
     }
 

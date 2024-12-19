@@ -8,7 +8,7 @@ use crate::runtime::{RuntimeContext, RuntimeRequest, RuntimeResponse};
 ///
 ///
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Blob {
     pub id: String,
     pub data: Bytes,
@@ -28,7 +28,7 @@ impl Default for Blob {
 ///
 ///
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Lambda {
     pub id: String,
     pub runtime: String,
@@ -71,31 +71,31 @@ pub struct Job {
 
     /// lambda of the job
     ///
-    pub lambda: Lambda,
+    pub lambda: Box<Lambda>,
 
     /// input of the job
     ///
-    pub input: Blob,
+    pub input: Box<Blob>,
 }
 
 impl Job {
     /// set_remaining_time
-    /// 
-    /// 
+    ///
+    ///
     pub fn sub_remaining_time(&mut self, duration: Duration) {
         self.remaining_time -= duration;
     }
 
     /// is_timeout
-    /// 
-    /// 
+    ///
+    ///
     pub fn is_timeout(&self) -> bool {
         self.remaining_time <= Duration::from_secs(0)
     }
 
     /// cancel
-    /// 
-    /// 
+    ///
+    ///
     pub fn cancel(&mut self) {
         self.status = JobStatus::Cancelled;
     }
@@ -106,26 +106,26 @@ impl Job {
 ///
 ///
 ///
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub enum JobStatus {
     /// Assigned
-    /// 
+    ///
     /// Job will be this status when it is assigned to worker
     #[default]
     Assigned,
 
     /// Running
-    /// 
+    ///
     /// Status of the job when it is running
     Running,
 
     /// Finished
-    /// 
+    ///
     /// Job will be this status when it is returned from Pending Manager
     Ready(RuntimeResponse),
 
     /// Pending
-    /// 
+    ///
     /// Job will be this status between Executor and Pending Manager
     Pending(RuntimeRequest),
 

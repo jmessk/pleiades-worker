@@ -165,12 +165,12 @@ impl Contractor {
             status: JobStatus::Assigned,
             remaining_time: Duration::from_secs(0),
             context: None,
-            lambda: Lambda {
+            lambda: Box::new(Lambda {
                 id: job_info.lambda.lambda_id,
                 runtime: job_info.lambda.runtime,
                 code: code.expect("contractor: code"),
-            },
-            input: input.expect("contractor: input"),
+            }),
+            input: Box::new(input.expect("contractor: input")),
         };
 
         request

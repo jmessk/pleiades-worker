@@ -4,7 +4,7 @@ use boa_engine::{
 };
 use std::{cell::RefCell, collections::VecDeque};
 
-use crate::runtime::{js::host_defined::HostDefined as _, RuntimeRequest};
+use crate::runtime::{javascript::host_defined::HostDefined as _, RuntimeRequest};
 
 #[derive(Default)]
 pub struct SyncJobQueue(RefCell<VecDeque<NativeJob>>);
@@ -38,7 +38,7 @@ impl JobQueue for SyncJobQueue {
             };
 
             //
-            if RuntimeRequest::exists_in_context(context.realm()) {
+            if RuntimeRequest::exists_in(context.realm()) {
                 println!("run_jobs: RuntimeRequest found !!!. return from run_jobs");
                 return;
             }

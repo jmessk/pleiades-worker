@@ -10,18 +10,18 @@ pub trait HostDefined
 where
     Self: Sized + Finalize + JsData + NativeObject,
 {
-    fn insert_into_context(self, realm: &Realm) -> Option<Box<Self>> {
+    fn insert(self, realm: &Realm) -> Option<Box<Self>> {
         realm.host_defined_mut().insert(self)
     }
 
     // fn get_from_context(realm: &Realm) -> Option<Self>;
 
-    fn exists_in_context(realm: &Realm) -> bool {
+    fn exists_in(realm: &Realm) -> bool {
         let host_defined = realm.host_defined();
         host_defined.has::<Self>()
     }
 
-    fn get_and_remove_from_context(realm: &Realm) -> Option<Self> {
+    fn extract(realm: &Realm) -> Option<Self> {
         let mut host_defined = realm.host_defined_mut();
         host_defined.remove::<Self>().map(|r| *r)
     }

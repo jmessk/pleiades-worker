@@ -7,7 +7,7 @@ use boa_engine::{
 };
 use boa_gc::{empty_trace, Finalize, Trace};
 
-use crate::runtime::js::host_defined::HostDefined as _;
+use crate::runtime::javascript::host_defined::HostDefined as _;
 use crate::runtime::{blob, RuntimeRequest, RuntimeResponse};
 
 #[derive(Debug, Finalize, JsData)]
@@ -99,14 +99,14 @@ impl Blob {
             .to_std_string_escaped();
 
         // Create a request object and insert it into the context
-        RuntimeRequest::Blob(blob::Request::Get(blob_id)).insert_into_context(context.realm());
+        RuntimeRequest::Blob(blob::Request::Get(blob_id)).insert(context.realm());
         println!("Blob.get: request inserted into context");
 
         let (promise, resolver) = JsPromise::new_pending(context);
 
         let job = NativeJob::new(move |context| {
             println!("Blob.get: job called");
-            let response = RuntimeResponse::get_and_remove_from_context(context.realm());
+            let response = RuntimeResponse::extract(context.realm());
 
             let result = match response {
                 Some(RuntimeResponse::Blob(blob::Response::Get(blob))) => {

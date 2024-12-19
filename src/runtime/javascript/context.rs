@@ -5,7 +5,7 @@ use bytes::Bytes;
 use std::rc::Rc;
 
 use crate::runtime;
-use crate::runtime::js::{
+use crate::runtime::javascript::{
     host_defined::{HostDefined as _, UserInput, UserOutput},
     job_queue, module,
 };
@@ -13,7 +13,7 @@ use crate::runtime::{RuntimeRequest, RuntimeResponse};
 
 #[derive(Debug)]
 pub struct JsContext {
-    context: boa_engine::Context,
+    context: Box<boa_engine::Context>,
 }
 
 unsafe impl Sync for JsContext {}
@@ -29,7 +29,7 @@ impl runtime::Context for JsContext {
         Self::register_builtin_functions(&mut context);
         Self::register_builtin_modules(&mut context);
 
-        Self { context }
+        Self { context: Box::new(context) }
     }
 }
 
@@ -108,8 +108,8 @@ impl JsContext {
     ///
     /// export default fetch;
     /// ```
-    pub fn register_user_defined_functions(&mut self, job: &Bytes) -> JsResult<()> {
-        let source = Source::from_bytes(job);
+    pub fn register_user_defined_functions(&mut self, lambda: &Bytes) -> JsResult<()> {
+        let source = Source::from_bytes(lambda);
         let module = Module::parse(source, None, &mut self.context)?;
 
         self.context
@@ -143,16 +143,16 @@ impl JsContext {
 
     pub fn step(&mut self) -> Option<RuntimeRequest> {
         self.context.job_queue().run_jobs(&mut self.context);
-        RuntimeRequest::get_and_remove_from_context(self.context.realm())
+        RuntimeRequest::extract(self.context.realm())
     }
 
     pub fn set_response(&mut self, response: RuntimeResponse) {
-        RuntimeRequest::get_and_remove_from_context(self.context.realm());
-        response.insert_into_context(self.context.realm());
+        // RuntimeRequest::get_and_remove_from_context(self.context.realm());
+        response.insert(self.context.realm());
     }
 
     pub fn get_output(&mut self) -> Option<Bytes> {
-        match UserOutput::get_and_remove_from_context(self.context.realm()) {
+        match UserOutput::extract(self.context.realm()) {
             Some(UserOutput { data }) => data,
             None => None,
         }
@@ -190,6 +190,8 @@ mod tests {
         let mut context = JsContext::init();
         context.register_user_defined_functions(&code).unwrap();
         context.register_user_input(&input);
+
+        // test start
 
         let request = context.step().unwrap();
         println!("request: {:?}", request);
