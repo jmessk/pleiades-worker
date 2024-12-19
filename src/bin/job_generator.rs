@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-const ITERATION: usize = 100;
+const ITERATION: usize = 10;
 
 #[tokio::main]
 async fn main() {
-    let client = pleiades::Client::try_new("http://pleiades.local/api/v0.5/").unwrap();
+    let client = pleiades::Client::try_new("http://master.local/api/v0.5/").unwrap();
 
     let lambda_blob = client
         .blob()
@@ -21,7 +21,7 @@ async fn main() {
         .unwrap();
 
     let mut join_set = tokio::task::JoinSet::new();
-    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(10));
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(100));
 
     let start_outer = std::time::Instant::now();
 

@@ -13,11 +13,11 @@ async fn main() {
     let client =
         Arc::new(pleiades_api::Client::try_new("http://pleiades.local/api/v0.5/").unwrap());
 
-    let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
-    let (mut data_manager, data_manager_api) = DataManager::new(fetcher_api);
-    let (mut contractor, contractor_api) =
-        Contractor::new(client.clone(), data_manager_api.clone(), 8);
-    let (mut updater, updater_api) = Updater::new(client.clone(), data_manager_api);
+    let (mut fetcher, fetcher_controller) = Fetcher::new(client.clone());
+    let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_controller);
+    let (mut contractor, contractor_controller) =
+        Contractor::new(client.clone(), data_manager_controller.clone(), 8);
+    let (mut updater, updater_controller) = Updater::new(client.clone(), data_manager_controller);
 
     let fetcher = tokio::spawn(async move {
         fetcher.run().await;
@@ -35,11 +35,11 @@ async fn main() {
     let worker_id = register_worker(&client).await;
     let (job_sender, job_receiver) = mpsc::channel(64);
     tokio::spawn(async move {
-        loop_contractor(contractor_api, worker_id, job_sender).await;
+        loop_contractor(contractor_controller, worker_id, job_sender).await;
     });
 
     let updater_loop = tokio::spawn(async move {
-        updater_loop(updater_api, job_receiver).await;
+        updater_loop(updater_controller, job_receiver).await;
     });
 
     updater_loop.await.unwrap();
