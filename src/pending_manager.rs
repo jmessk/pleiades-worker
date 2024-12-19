@@ -23,7 +23,7 @@ pub struct PendingManager {
 
     /// scheduler_controller
     ///
-    scheduler_controller: scheduler::Controller,
+    scheduler_controller: Option<scheduler::Controller>,
 
     /// data_manager_controller
     ///
@@ -40,16 +40,13 @@ impl PendingManager {
     ///
     ///
     ///
-    pub fn new(
-        scheduler_controller: scheduler::Controller,
-        data_manager_controller: data_manager::Controller,
-    ) -> (Self, Controller) {
+    pub fn new(data_manager_controller: data_manager::Controller) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let data_manager = Self {
             command_receiver,
             task_counter: Arc::new(AtomicUsize::new(0)),
-            scheduler_controller,
+            scheduler_controller: None,
             data_manager_controller,
             http_client: reqwest::Client::new(),
         };
@@ -59,12 +56,24 @@ impl PendingManager {
         (data_manager, controller)
     }
 
+    /// set_controller
+    /// 
+    /// 
+    pub fn set_controller(&mut self, scheduler_controller: scheduler::Controller) {
+        self.scheduler_controller = Some(scheduler_controller);
+    }
+
     /// run
     ///
     ///
     ///
     ///
     pub async fn run(&mut self) {
+        let scheduler_controller = self
+            .scheduler_controller
+            .as_mut()
+            .expect("scheduler_controller must be set");
+
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Enqueue(request) => {
@@ -86,7 +95,7 @@ impl PendingManager {
 
                     // clone to move
                     let task_counter = self.task_counter.clone();
-                    let scheduler_controller = self.scheduler_controller.clone();
+                    let scheduler_controller = scheduler_controller.clone();
 
                     match runtime_request {
                         // blob
@@ -98,7 +107,6 @@ impl PendingManager {
                             let handle = self.data_manager_controller.get_blob(blob_id).await;
 
                             tokio::spawn(async move {
-                                // Self::task_blob_get(scheduler_controller, handle, job).await;
                                 Self::task_blob_get(handle, &mut job).await;
                                 scheduler_controller.enqueue(job).await;
 
@@ -258,6 +266,7 @@ impl PendingManager {
 
                             tokio::spawn(async move {
                                 Self::task_http_get(client, &mut job, url.clone()).await;
+
                                 request
                                     .response_sender
                                     .send(register::Response { job })

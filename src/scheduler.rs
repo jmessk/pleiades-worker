@@ -1,17 +1,20 @@
 pub mod policy;
 
+use boa_engine::job;
+use pleiades_api::api::worker;
 use std::{
+    collections::HashMap,
+    default,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
-    time::Duration,
 };
 use tokio::sync::mpsc;
 
 use crate::{
     contractor::{self, contract},
-    executor,
+    helper::{ExecutorManager, WorkerIdManager},
     pleiades_type::{Job, JobStatus},
     updater,
 };
@@ -30,6 +33,10 @@ pub struct Scheduler {
     ///
     task_counter: Arc<AtomicUsize>,
 
+    /// worker_id_set
+    ///
+    worker_id_manager: WorkerIdManager,
+
     /// scheduler_controller
     ///
     scheduler_controller: Controller,
@@ -38,12 +45,13 @@ pub struct Scheduler {
     ///
     contractor_controller: contractor::Controller,
 
+    /// updater_controller
+    ///
     updater_controller: updater::Controller,
 
     /// executor_controller
     ///
-    // executor_list: Vec<(executor::Controller, Duration)>,
-    executor_manager: ExecutorManager,
+    executor_manager: Option<ExecutorManager>,
 }
 
 impl Scheduler {
@@ -51,9 +59,9 @@ impl Scheduler {
     ///
     ///
     pub fn new(
+        worker_id_manager: WorkerIdManager,
         contractor_controller: contractor::Controller,
         updater_controller: updater::Controller,
-        executor_manager: ExecutorManager,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(128);
 
@@ -62,62 +70,90 @@ impl Scheduler {
         let updater = Self {
             command_receiver,
             task_counter: Arc::new(AtomicUsize::new(0)),
+            worker_id_manager,
             scheduler_controller: controller.clone(),
             contractor_controller,
             updater_controller,
-            executor_manager,
+            executor_manager: None,
         };
 
         (updater, controller)
     }
 
+    /// set_controller
+    pub fn set_controller(&mut self, executor_manager: ExecutorManager) {
+        self.executor_manager = Some(executor_manager);
+    }
+
     /// run
     ///
+    ///
     pub async fn run(&mut self) {
-        // self.algorithm_1().await;
+        let command_receiver = &mut self.command_receiver;
+        let worker_id_manager = &mut self.worker_id_manager;
+        let scheduler_controller = &mut self.scheduler_controller;
+        let contractor_controller = &mut self.contractor_controller;
+
+        let executor_manager = self
+            .executor_manager
+            .as_mut()
+            .expect("ExecutorManager is not set");
+
+        let updater_controller = &mut self.updater_controller;
+
+        Self::default_policy(
+            command_receiver,
+            worker_id_manager,
+            scheduler_controller,
+            contractor_controller,
+            updater_controller,
+            executor_manager,
+        )
+        .await;
 
         self.wait_for_shutdown().await;
     }
 
-    async fn algorithm_1(&mut self) {
-        while let Some(Command::Enqueue(enqueue::Request { job })) =
-            self.command_receiver.recv().await
-        {
-            match job.status {
-                JobStatus::Assigned | JobStatus::Ready(_) => {
-                    let executor = self.executor_manager.current_shortest();
-                    executor.enqueue(job).await;
-                }
-                JobStatus::Finished(_) => {
-                    self.updater_controller.update_job(job).await;
-                    println!("Job is finished");
-                }
-                JobStatus::Cancelled => {
-                    self.updater_controller.update_job(job).await;
-                    println!("Job is cancelled");
-                }
-                _ => {
-                    unreachable!()
-                }
-            }
+    async fn default_policy(
+        command_receiver: &mut mpsc::Receiver<Command>,
+        worker_id_manager: &mut WorkerIdManager,
+        scheduler_controller: &mut Controller,
+        contractor_controller: &mut contractor::Controller,
+        updater_controller: &mut updater::Controller,
+        executor_manager: &mut ExecutorManager,
+    ) {
+        let default_worker_id = worker_id_manager.get("default").unwrap();
+
+        for _ in 0..executor_manager.num_executors() {
+            Self::contract_background(
+                &default_worker_id,
+                contractor_controller,
+                scheduler_controller,
+            )
+            .await;
         }
-    }
 
-    async fn algorithm_2(&mut self) {
-        // let mut job_buf: Vec<Command> = Vec::with_capacity(64);
-        // let job_buf_capacity = job_buf.capacity();
+        while let Some(command) = command_receiver.recv().await {
+            match command {
+                Command::Enqueue(enqueue::Request { job }) => match job.status {
+                    JobStatus::Assigned | JobStatus::Ready(_) => {
+                        let executor = executor_manager.current_shortest();
+                        executor.enqueue(job).await;
+                    }
+                    JobStatus::Finished(_) => {
+                        updater_controller.update_job(job).await;
+                        println!("Job is finished");
+                    }
+                    JobStatus::Cancelled => {
+                        updater_controller.update_job(job).await;
+                        println!("Job is cancelled");
+                    }
+                    _ => unreachable!(),
+                },
+                Command::NoJob => {}
+            }
 
-        loop {
-            // 1. get jobs in the scheduler queue
-            // let num_jobs = self
-            //     .command_receiver
-            //     .blocking_recv_many(&mut job_buf, job_buf_capacity);
 
-            // 2. get current max queueing time of the executor
-
-            // next, if jobs are in the queue, determine which executor to use
-
-            todo!()
         }
     }
 
@@ -141,12 +177,23 @@ impl Scheduler {
     /// task_contract_background
     ///
     ///
-    async fn task_contract_background(handle: contract::Handle, scheduler_controller: Controller) {
-        let response = handle.recv().await;
+    async fn contract_background(
+        worker_id: &str,
+        contractor_controller: &contractor::Controller,
+        scheduler_controller: &Controller,
+    ) {
+        let handle = contractor_controller
+            .try_contract(worker_id.to_string())
+            .await
+            .unwrap();
+        let scheduler_controller = scheduler_controller.clone();
 
-        if let Some(job) = response.contracted {
-            scheduler_controller.enqueue(job).await
-        }
+        tokio::spawn(async move {
+            let response = handle.recv().await;
+            if let Some(job) = response.contracted {
+                scheduler_controller.enqueue(job).await;
+            }
+        });
     }
 }
 
@@ -173,6 +220,11 @@ impl Controller {
         self.command_sender.blocking_send(request).unwrap();
     }
 
+    pub async fn signal_no_job(&self) {
+        let request = Command::NoJob;
+        self.command_sender.send(request).await.unwrap();
+    }
+
     // /// enqueue_assigned
     // ///
     // pub async fn enqueue_assigned(&self, job: Job) {
@@ -190,6 +242,7 @@ impl Controller {
 
 pub enum Command {
     Enqueue(enqueue::Request),
+    NoJob,
     // Assigned(assigned::Request),
     // Pending(pending::Request),
 }
@@ -217,102 +270,3 @@ pub mod enqueue {
 //         pub job: Job,
 //     }
 // }
-
-pub mod contract_join_set {
-    use super::*;
-
-    struct ContractJoinSet {
-        scheduler_controller: Controller,
-    }
-
-    impl ContractJoinSet {
-        pub fn new(scheduler_controller: Controller) -> Self {
-            Self {
-                scheduler_controller,
-            }
-        }
-
-        // pub fn run(&self) {
-        //     let contract_join_set = JoinSet::new();
-
-        //     while let Some(command) = self.command_receiver.recv().await {
-        //         contract_join_set.spawn(async move {})
-        //     }
-        // }
-    }
-
-    pub struct Request {
-        pub job: Job,
-    }
-
-    pub struct Response {
-        pub job: Job,
-    }
-}
-
-#[derive(Default)]
-pub struct ExecutorManager {
-    list: Vec<(executor::Controller, Duration)>,
-}
-
-impl ExecutorManager {
-    pub fn builder() -> ExecutorManagerBuilder {
-        ExecutorManagerBuilder::new()
-    }
-
-    pub fn insert(&mut self, controller: executor::Controller) {
-        self.list.push((controller, Duration::from_secs(0)));
-    }
-
-    pub fn current_shortest(&self) -> &executor::Controller {
-        let executor_controller = self
-            .list
-            .iter()
-            .min_by_key(|(c, _)| c.max_queueing_time())
-            .unwrap();
-        &executor_controller.0
-    }
-
-    pub fn estimated_shortest(&self) -> &executor::Controller {
-        let executor_controller = self
-            .list
-            .iter()
-            .min_by_key(|(_, duration)| duration)
-            .unwrap();
-        &executor_controller.0
-    }
-
-    pub fn update_queuing_time(&mut self) {
-        self.list
-            .iter_mut()
-            .for_each(|(c, d)| *d = c.max_queueing_time());
-    }
-}
-
-pub struct ExecutorManagerBuilder {
-    list: Vec<executor::Controller>,
-}
-
-impl ExecutorManagerBuilder {
-    pub fn new() -> Self {
-        Self { list: Vec::new() }
-    }
-
-    pub fn insert(&mut self, controller: executor::Controller) {
-        self.list.push(controller);
-    }
-
-    pub fn build(self) -> anyhow::Result<ExecutorManager> {
-        if self.list.is_empty() {
-            anyhow::bail!("ExecutorManagerBuilder: no executor controller is provided");
-        }
-
-        let list = self
-            .list
-            .into_iter()
-            .map(|c| (c, Duration::from_secs(0)))
-            .collect();
-
-        Ok(ExecutorManager { list })
-    }
-}

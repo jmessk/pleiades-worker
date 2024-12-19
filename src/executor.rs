@@ -22,11 +22,11 @@ pub struct Executor {
     /// updater
     ///
     // updater_controller: updater::Controller,
-    scheduler_controller: scheduler::Controller,
+    scheduler_controller: Option<scheduler::Controller>,
 
     /// pending_manager
     ///
-    pending_manager_controller: pending_manager::Controller,
+    pending_manager_controller: Option<pending_manager::Controller>,
 
     /// max_queueing_time
     ///
@@ -44,10 +44,8 @@ impl Executor {
     ///
     ///
     ///
-    pub fn new(
-        // updater_controller: updater::Controller,
-        pending_manager_controller: pending_manager::Controller,
-        scheduler_controller: scheduler::Controller,
+    pub fn new(// pending_manager_controller: pending_manager::Controller,
+        // scheduler_controller: scheduler::Controller,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
@@ -55,9 +53,8 @@ impl Executor {
 
         let data_manager = Self {
             command_receiver,
-            // updater_controller,
-            scheduler_controller,
-            pending_manager_controller,
+            scheduler_controller: None,
+            pending_manager_controller: None,
             max_queueing_time: max_queueing_time.clone(),
             runtime: JsRuntime::init(),
         };
@@ -68,6 +65,18 @@ impl Executor {
         };
 
         (data_manager, controller)
+    }
+
+    /// set_controller
+    /// 
+    /// 
+    pub fn set_controller(
+        &mut self,
+        scheduler_controller: scheduler::Controller,
+        pending_manager_controller: pending_manager::Controller,
+    ) {
+        self.scheduler_controller = Some(scheduler_controller);
+        self.pending_manager_controller = Some(pending_manager_controller);
     }
 
     /// run
@@ -84,6 +93,16 @@ impl Executor {
     }
 
     fn task_execute_job(&mut self, request: enqueue::Request) {
+        let scheduler_controller = self
+            .scheduler_controller
+            .as_ref()
+            .expect("SchedulerController is not set");
+
+        let pending_manager_controller = self
+            .pending_manager_controller
+            .as_ref()
+            .expect("PendingManagerController is not set");
+
         let mut job = request.job;
 
         match job.status {
@@ -94,7 +113,7 @@ impl Executor {
                     .is_err()
                 {
                     job.cancel();
-                    self.scheduler_controller.enqueue_nowait(job);
+                    scheduler_controller.enqueue_nowait(job);
                     return;
                 }
             }
@@ -118,6 +137,9 @@ impl Executor {
 
         let job_remaining_time = job.remaining_time;
 
+        // execution
+        //
+        //
         let job_status = {
             // start measuring time
             let start = ThreadTime::now();
@@ -152,7 +174,7 @@ impl Executor {
                     ..job
                 };
 
-                self.scheduler_controller.enqueue_nowait(job);
+                scheduler_controller.enqueue_nowait(job);
             }
             JobStatus::Pending(request) if !job.is_timeout() => {
                 let job = Job {
@@ -161,11 +183,11 @@ impl Executor {
                     ..job
                 };
 
-                self.pending_manager_controller.enqueue_nowait(job);
+                pending_manager_controller.enqueue_nowait(job);
             }
             _ => {
                 job.cancel();
-                self.scheduler_controller.enqueue_nowait(job);
+                scheduler_controller.enqueue_nowait(job);
             }
         }
 
