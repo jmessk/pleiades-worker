@@ -81,6 +81,15 @@ impl JsContext {
                 NativeFunction::from_fn_ptr(function::set_user_output),
             )
             .unwrap();
+
+        // sleep
+        context
+            .register_global_builtin_callable(
+                js_string!("sleep"),
+                1,
+                NativeFunction::from_fn_ptr(function::sleep),
+            )
+            .unwrap();
     }
 
     fn register_builtin_modules(context: &mut Context) {

@@ -45,3 +45,18 @@ pub fn set_user_output(
 
     Ok(JsValue::undefined())
 }
+
+pub fn sleep(
+    _this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ms = match args.first() {
+        Some(ms) => ms.to_number(context)? as u64,
+        None => 0,
+    };
+
+    std::thread::sleep(std::time::Duration::from_millis(ms));
+
+    Ok(JsValue::undefined())
+}

@@ -18,6 +18,18 @@ async fn main() {
     //
     // /////
 
+    // Initialize tracing
+    //
+    // let filter = tracing_subscriber::EnvFilter::try_new("pleiades-worker=trace").unwrap();
+    // let filter = tracing_subscriber::filter::Targets::new()
+    //     .with_target("pleiades-worker", tracing::Level::TRACE);
+    tracing_subscriber::fmt::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .fil
+        .init();
+    //
+    // /////
+
     // Initialize components
     //
     let client = Arc::new(pleiades_api::Client::try_new(&pleiades_url).unwrap());

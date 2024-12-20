@@ -9,14 +9,15 @@ boa_engine = "0.19"
 boa_gc = "0.19.1"
 boa_runtime = "0.19.1"
 bytes = "1.8"
-pleiades-api = { git = "https://git.dolylab.cc/mec/pleiades-rs.git", branch = "dev"}
-pleiades = { git = "https://git.dolylab.cc/mec/pleiades-rs.git", branch = "dev"}
+pleiades-api = { git = "https://git.dolylab.cc/mec/pleiades-rs.git", branch = "dev" }
+pleiades = { git = "https://git.dolylab.cc/mec/pleiades-rs.git", branch = "dev" }
 tokio = { version = "1.0", features = ["full"] }
 pollster = "0.4.0"
 cpu-time = "1.0.0"
 reqwest = "0.12.9"
 tracing = "0.1.41"
 dotenvy = "0.15.7"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 [dev-dependencies]
 criterion = "0.5.1"

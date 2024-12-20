@@ -14,15 +14,12 @@ async fn main() {
 
     let client = pleiades::Client::try_new(&pleiades_url).expect("failed to create client");
 
-    // let script = include_bytes!("./script/hello.js");
+    let script = include_bytes!("./script/hello.js");
     // let script = include_bytes!("./script/counter.js");
-    let script = include_bytes!("./script/get-blob.js");
+    // let script = include_bytes!("./script/sleep.js");
+    // let script = include_bytes!("./script/get-blob.js");
 
-    let lambda_blob = client
-        .blob()
-        .new(script.as_ref())
-        .await
-        .unwrap();
+    let lambda_blob = client.blob().new(script.as_ref()).await.unwrap();
 
     let lambda = lambda_blob.into_lambda("pleiades+example").await.unwrap();
 
