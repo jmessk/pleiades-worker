@@ -1,4 +1,7 @@
-const ITERATION: usize = 10;
+use std::time::Duration;
+
+const ITERATION: usize = 100;
+const INTERVAL: Duration = Duration::from_millis(100);
 
 #[tokio::main]
 async fn main() {
@@ -9,11 +12,15 @@ async fn main() {
     //
     // /////
 
-    let client = pleiades::Client::try_new(&pleiades_url).unwrap();
+    let client = pleiades::Client::try_new(&pleiades_url).expect("failed to create client");
+
+    // let script = include_bytes!("./script/hello.js");
+    // let script = include_bytes!("./script/counter.js");
+    let script = include_bytes!("./script/get-blob.js");
 
     let lambda_blob = client
         .blob()
-        .new(include_bytes!("./script/get-blob.js").as_slice())
+        .new(script.as_ref())
         .await
         .unwrap();
 
@@ -26,7 +33,7 @@ async fn main() {
         .unwrap();
 
     let mut join_set = tokio::task::JoinSet::new();
-    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(100));
+    let mut ticker = tokio::time::interval(INTERVAL);
 
     let start_outer = std::time::Instant::now();
 

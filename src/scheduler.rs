@@ -98,7 +98,7 @@ impl Scheduler {
     async fn default_policy(&mut self) {
         let default_worker_id = self.worker_id_manager.get_default();
 
-        for _ in 0..self.executor_manager.num_executors() {
+        for _ in 0..self.contractor_controller.max_concurrency {
             self.background_contract(&default_worker_id).await;
         }
 
@@ -108,13 +108,14 @@ impl Scheduler {
             match command {
                 Command::Enqueue(enqueue::Request { job }) => match job.status {
                     JobStatus::Assigned | JobStatus::Ready(_) => {
-                        println!("Job is assigned");
-
                         let executor = self.executor_manager.current_shortest();
+                        println!("Executor ID: {:?}", executor.id);
                         self.background_execute(job, executor).await;
+                        println!("Scheduler: job is enqueued to Executor");
                     }
                     JobStatus::Finished(_) => {
                         println!("Job is finished");
+                        println!("Job remaining time: {:?}", job.remaining_time);
                         self.updater_controller.update_job(job).await;
 
                         if shutdown_flag {
@@ -140,7 +141,7 @@ impl Scheduler {
                     _ => unreachable!(),
                 },
                 Command::NoJob => {
-                    println!("No job is available");
+                    // println!("No job is available");
 
                     if shutdown_flag {
                         continue;
@@ -176,6 +177,8 @@ impl Scheduler {
             while task_counter.load(Ordering::Relaxed) > 0 {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 scheduler_controller.signal_shutdown().await;
+
+                println!("tasks: {}", task_counter.load(Ordering::Relaxed));
             }
         });
     }

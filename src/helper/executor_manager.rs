@@ -20,8 +20,13 @@ impl ExecutorManager {
         let executor_controller = self
             .list
             .iter()
-            .min_by_key(|(c, _)| c.max_queueing_time())
+            .min_by_key(|(c, _)| {
+                let a = c.max_queueing_time();
+                println!("max_queueing_time: {:?}", a);
+                a
+            })
             .unwrap();
+
         &executor_controller.0
     }
 

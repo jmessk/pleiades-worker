@@ -6,6 +6,9 @@ use pleiades_worker::{
 };
 use tokio::task::JoinSet;
 
+const NUM_CONTRACTORS: usize = 8;
+const NUM_EXECUTORS: usize = 4;
+
 #[tokio::main]
 async fn main() {
     // Load .env file
@@ -21,8 +24,11 @@ async fn main() {
 
     let (mut fetcher, fetcher_controller) = Fetcher::new(client.clone());
     let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_controller);
-    let (mut contractor, contractor_controller) =
-        Contractor::new(client.clone(), data_manager_controller.clone(), 8);
+    let (mut contractor, contractor_controller) = Contractor::new(
+        client.clone(),
+        data_manager_controller.clone(),
+        NUM_CONTRACTORS,
+    );
     let (mut updater, updater_controller) =
         Updater::new(client.clone(), data_manager_controller.clone());
     let (mut pending_manager, pending_manager_controller) =
@@ -56,9 +62,8 @@ async fn main() {
     //
     let mut executor_manager_builder = ExecutorManager::builder();
 
-    for _ in 0..8 {
-        let (mut executor, executor_controller) = Executor::new();
-
+    for i in 0..NUM_EXECUTORS {
+        let (mut executor, executor_controller) = Executor::new(i);
         executor_manager_builder.insert(executor_controller);
 
         join_set.spawn_blocking(move || executor.run());
@@ -81,6 +86,8 @@ async fn main() {
     join_set.spawn(async move {
         scheduler.run().await;
     });
+
+    println!("Worker started");
 
     tokio::signal::ctrl_c().await.unwrap();
     scheduler_controller.signal_shutdown().await;

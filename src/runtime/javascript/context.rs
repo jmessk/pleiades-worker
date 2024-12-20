@@ -109,6 +109,8 @@ impl JsContext {
     /// export default fetch;
     /// ```
     pub fn register_user_defined_functions(&mut self, lambda: &Bytes) -> JsResult<()> {
+        // let code_string = String::from_utf8_lossy(lambda);
+        // let source = Source::from_bytes(code_string.as_bytes());
         let source = Source::from_bytes(lambda);
         let module = Module::parse(source, None, &mut self.context)?;
 
@@ -186,6 +188,10 @@ mod tests {
         .into();
 
         let input: Bytes = "test_input".into();
+
+        let code = code.to_vec();
+        let code = Bytes::from(code);
+        println!("{:?}", code);
 
         let mut context = JsContext::init();
         context.register_user_defined_functions(&code).unwrap();

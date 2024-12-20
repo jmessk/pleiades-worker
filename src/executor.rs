@@ -7,7 +7,6 @@ use tokio::sync::mpsc;
 
 use crate::pleiades_type::{Job, JobStatus};
 use crate::runtime::{JsRuntime, Runtime as _, RuntimeContext};
-use crate::scheduler;
 
 /// Executor
 ///
@@ -18,6 +17,10 @@ pub struct Executor {
     /// interface to access this component
     ///
     command_receiver: mpsc::Receiver<Command>,
+
+    /// id_num
+    ///
+    _id: usize,
 
     /// updater
     ///
@@ -44,8 +47,10 @@ impl Executor {
     ///
     ///
     ///
-    pub fn new(// pending_manager_controller: pending_manager::Controller,
+    pub fn new(
+        // pending_manager_controller: pending_manager::Controller,
         // scheduler_controller: scheduler::Controller,
+        id: usize,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
@@ -53,6 +58,7 @@ impl Executor {
 
         let data_manager = Self {
             command_receiver,
+            _id: id,
             // scheduler_controller: None,
             // pending_manager_controller: None,
             max_queueing_time: max_queueing_time.clone(),
@@ -62,6 +68,7 @@ impl Executor {
         let controller = Controller {
             command_sender,
             max_queueing_time,
+            id,
         };
 
         (data_manager, controller)
@@ -107,20 +114,36 @@ impl Executor {
 
         match job.status {
             JobStatus::Assigned => {
-                if self
-                    .runtime
-                    .create_context(&job.lambda, &job.input)
-                    .inspect_err(|e| println!("Executor: {}", e))
-                    .is_err()
-                {
-                    job.cancel();
-                    // scheduler_controller.enqueue_nowait(job);
-                    request
-                        .response_sender
-                        .send(register::Response { job })
-                        .unwrap();
+                // if self
+                //     .runtime
+                //     .create_context(&job.lambda, &job.input)
+                //     .inspect_err(|e| println!("Executor: {}", e))
+                //     .is_err()
+                // {
+                //     job.cancel();
+                //     // scheduler_controller.enqueue_nowait(job);
+                //     request
+                //         .response_sender
+                //         .send(register::Response { job })
+                //         .unwrap();
 
-                    return;
+                //     return;
+                // }
+                match self.runtime.create_context(&job.lambda, &job.input) {
+                    Ok(context) => {
+                        self.runtime.set_context(context);
+                    }
+                    Err(e) => {
+                        println!("Executor error: {}", e);
+                        job.cancel();
+                        // scheduler_controller.enqueue_nowait(job);
+                        request
+                            .response_sender
+                            .send(register::Response { job })
+                            .unwrap();
+
+                        return;
+                    }
                 }
             }
             JobStatus::Ready(response) => {
@@ -167,15 +190,30 @@ impl Executor {
                 .sub_assign(job_remaining_time);
         }
 
-        let context = match self.runtime.get_context() {
-            Some(context) => context,
-            None => unreachable!(),
-        };
+        println!("Job status: {:?}", job_status);
 
-        let job = Job {
-            status: job_status,
-            context: Some(RuntimeContext::JavaScript(context)),
-            ..job
+        let job = match job_status {
+            JobStatus::Finished(_) => Job {
+                status: job_status,
+                context: None,
+                ..job
+            },
+            JobStatus::Pending(_) if !job.is_timeout() => {
+                let context = match self.runtime.get_context() {
+                    Some(context) => context,
+                    None => unreachable!(),
+                };
+
+                Job {
+                    status: job_status,
+                    context: Some(RuntimeContext::JavaScript(context)),
+                    ..job
+                }
+            }
+            _ => {
+                job.cancel();
+                job
+            }
         };
 
         request
@@ -271,6 +309,7 @@ impl Executor {
 pub struct Controller {
     command_sender: mpsc::Sender<Command>,
     max_queueing_time: Arc<Mutex<Duration>>,
+    pub id: usize,
 }
 
 impl Controller {
@@ -278,7 +317,9 @@ impl Controller {
     ///
     ///
     pub fn max_queueing_time(&self) -> Duration {
-        *self.max_queueing_time.lock().unwrap()
+        let a = *self.max_queueing_time.lock().unwrap();
+        println!("Executor Controller: max_queueing_time: {:?}", a);
+        a
     }
 
     // /// get_blob
@@ -302,6 +343,9 @@ impl Controller {
                 .lock()
                 .unwrap()
                 .add_assign(job.remaining_time);
+
+            let a = *self.max_queueing_time.lock().unwrap();
+            println!("Executor Controller: max_queueing_time: {:?}", a);
         }
 
         let (response_sender, response_receiver) = tokio::sync::oneshot::channel();

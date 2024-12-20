@@ -109,8 +109,8 @@ impl Blob {
             let response = RuntimeResponse::extract(context.realm());
 
             let result = match response {
-                Some(RuntimeResponse::Blob(blob::Response::Get(blob))) => {
-                    let array = JsUint8Array::from_iter(blob.unwrap().data, context)?;
+                Some(RuntimeResponse::Blob(blob::Response::Get(Some(blob)))) => {
+                    let array = JsUint8Array::from_iter(blob.data, context)?;
                     println!("Blob.get: response found: {:?}", array);
 
                     JsValue::from(array)

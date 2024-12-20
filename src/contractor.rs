@@ -6,6 +6,8 @@ use crate::{
     pleiades_type::{Job, JobStatus, Lambda},
 };
 
+const MAX_RUNNABLE: Duration = Duration::from_millis(200);
+
 /// Contractor
 ///
 ///
@@ -49,7 +51,10 @@ impl Contractor {
             max_concurrency,
         };
 
-        let controller = Controller { command_sender };
+        let controller = Controller {
+            command_sender,
+            max_concurrency,
+        };
 
         (contractor, controller)
     }
@@ -60,6 +65,8 @@ impl Contractor {
     ///
     ///
     pub async fn run(&mut self) {
+        tracing::debug!("Contractor is running");
+
         while let Some(command) = self.command_receiver.recv().await {
             let client = self.client.clone();
             let data_manager_controller = self.data_manager_controller.clone();
@@ -163,7 +170,7 @@ impl Contractor {
         let job = Job {
             id: job_id,
             status: JobStatus::Assigned,
-            remaining_time: Duration::from_secs(10),
+            remaining_time: MAX_RUNNABLE,
             context: None,
             lambda: Box::new(Lambda {
                 id: job_info.lambda.lambda_id,
@@ -206,6 +213,7 @@ impl Contractor {
 #[derive(Clone)]
 pub struct Controller {
     command_sender: mpsc::Sender<Command>,
+    pub max_concurrency: usize,
 }
 
 impl Controller {

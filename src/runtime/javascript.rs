@@ -26,11 +26,14 @@ impl Runtime for JsRuntime {
     fn create_context(&self, lambda: &Lambda, input: &Blob) -> anyhow::Result<JsContext> {
         let mut context = JsContext::init();
 
-        if context
-            .register_user_defined_functions(&lambda.code.data)
-            .is_err()
-        {
-            anyhow::bail!("Failed to register user-defined functions");
+        // if context
+        //     .register_user_defined_functions(&lambda.code.data)
+        //     .is_err()
+        // {
+        //     anyhow::bail!("Failed to register user-defined functions");
+        // }
+        if let Err(e) = context.register_user_defined_functions(&lambda.code.data) {
+            anyhow::bail!("Failed to register user-defined functions: {:?}", e);
         }
 
         context.register_user_input(&input.data);
