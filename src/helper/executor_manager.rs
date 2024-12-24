@@ -2,9 +2,17 @@ use std::time::Duration;
 
 use crate::executor;
 
+pub struct ExecutorItem {
+    pub controller: executor::Controller,
+    pub deadline: Duration,
+}
+
 #[derive(Default)]
 pub struct ExecutorManager {
-    list: Vec<(executor::Controller, Duration)>,
+    // list: Vec<(executor::Controller, Duration)>,
+    list: Vec<ExecutorItem>,
+    // pub contracting: Duration,
+    // pub pending: Duration,
 }
 
 impl ExecutorManager {
@@ -16,44 +24,51 @@ impl ExecutorManager {
         self.list.len()
     }
 
-    pub fn current_shortest(&self) -> &executor::Controller {
-        let executor_controller = self
+    pub fn shortest(&self) -> &executor::Controller {
+        let item = self
             .list
             .iter()
-            .min_by_key(|(c, _)| {
-                let a = c.max_queueing_time();
+            .min_by_key(|item| {
+                let a = item.controller.max_queueing_time();
                 println!("max_queueing_time: {:?}", a);
                 a
             })
             .unwrap();
 
-        &executor_controller.0
+        &item.controller
     }
 
-    pub fn estimated_shortest(&self) -> &executor::Controller {
-        let executor_controller = self
-            .list
-            .iter()
-            .min_by_key(|(_, duration)| duration)
-            .unwrap();
-        &executor_controller.0
-    }
+    // pub fn estimated_shortest(&self) -> &executor::Controller {
+    //     let item = self
+    //         .list
+    //         .iter()
+    //         .min_by_key(|item| item.controller.max_queueing_time() + item.contracting)
+    //         .unwrap();
 
-    pub fn update_queuing_time(&mut self) {
-        self.list
-            .iter_mut()
-            .for_each(|(c, d)| *d = c.max_queueing_time());
-    }
+    //     &item.controller
+    // }
+
+    // pub fn update_queuing_time(&mut self) {
+    //     self.list
+    //         .iter_mut()
+    //         .for_each(|item| *item.ad = c.max_queueing_time());
+    // }
 }
 
 #[derive(Default)]
 pub struct ExecutorManagerBuilder {
-    list: Vec<executor::Controller>,
+    // list: Vec<executor::Controller>,
+    list: Vec<ExecutorItem>,
 }
 
 impl ExecutorManagerBuilder {
-    pub fn insert(&mut self, controller: executor::Controller) {
-        self.list.push(controller);
+    pub fn insert(&mut self, controller: executor::Controller, deadline: Duration) {
+        // self.list.push(controller);
+        self.list.push(ExecutorItem {
+            controller,
+            deadline,
+            // contracting: Duration::from_secs(0),
+        });
     }
 
     pub fn build(self) -> anyhow::Result<ExecutorManager> {
@@ -61,12 +76,6 @@ impl ExecutorManagerBuilder {
             anyhow::bail!("ExecutorManagerBuilder: no executor controller is provided");
         }
 
-        let list = self
-            .list
-            .into_iter()
-            .map(|c| (c, Duration::from_secs(0)))
-            .collect();
-
-        Ok(ExecutorManager { list })
+        Ok(ExecutorManager { list: self.list })
     }
 }

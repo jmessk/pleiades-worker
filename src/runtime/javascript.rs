@@ -38,7 +38,7 @@ impl Runtime for JsRuntime {
 
         context.register_user_input(&input.data);
 
-        println!("Context created");
+        tracing::trace!("Context created");
 
         Ok(context)
     }

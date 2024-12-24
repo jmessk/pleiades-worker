@@ -37,18 +37,17 @@ impl JobQueue for SyncJobQueue {
             //
             if RuntimeRequest::exists_in(context.realm()) {
                 // println!("run_jobs: RuntimeRequest found. return from run_jobs");
-                tracing::trace!("run_jobs: RuntimeRequest found. return from run_jobs");
+                tracing::trace!("RuntimeRequest found. return from run_jobs");
                 return;
             }
 
             next_job = self.0.borrow_mut().pop_front();
         }
 
-        println!("run_jobs: finished running jobs");
+        tracing::trace!("job queue is empty");
     }
 
     fn enqueue_future_job(&self, _future: FutureJob, _context: &mut Context) {
-        println!("enqueue_future_job: enqueuing future job");
-        println!("enqueue_future_job: unreachable code");
+        unimplemented!("FutureJob is not supported in SyncJobQueue");
     }
 }

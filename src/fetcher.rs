@@ -1,9 +1,6 @@
 use bytes::Bytes;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
-use tokio::sync::{mpsc, oneshot};
+use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot, Semaphore};
 
 use crate::pleiades_type::Blob;
 
@@ -21,7 +18,8 @@ pub struct Fetcher {
 
     /// number of jobs currently being contracted
     ///
-    task_counter: Arc<AtomicUsize>,
+    max_concurrency: usize,
+    semaphore: Arc<Semaphore>,
 }
 
 impl Fetcher {
@@ -33,7 +31,8 @@ impl Fetcher {
         let fetcher = Self {
             client,
             command_receiver,
-            task_counter: Arc::new(AtomicUsize::new(0)),
+            max_concurrency: 64,
+            semaphore: Arc::new(Semaphore::new(64)),
         };
 
         let api = Controller { command_sender };
@@ -44,13 +43,13 @@ impl Fetcher {
     /// run
     ///
     pub async fn run(&mut self) {
+        tracing::info!("running");
+
         while let Some(command) = self.command_receiver.recv().await {
             let client = self.client.clone();
-            let task_counter = self.task_counter.clone();
+            let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
             tokio::spawn(async move {
-                task_counter.fetch_add(1, Ordering::Relaxed);
-
                 match command {
                     Command::DownloadBlob(request) => {
                         Self::task_download_blob(client, request).await
@@ -58,11 +57,25 @@ impl Fetcher {
                     Command::UploadBlob(request) => Self::task_upload_blob(client, request).await,
                 }
 
-                task_counter.fetch_sub(1, Ordering::Relaxed);
+                let _ = permit;
             });
         }
 
         self.wait_for_shutdown().await;
+    }
+
+    async fn wait_for_shutdown(&self) {
+        tracing::debug!(
+            "shutting down {} tasks",
+            self.max_concurrency - self.semaphore.available_permits()
+        );
+
+        let _ = self
+            .semaphore
+            .acquire_many(self.max_concurrency as u32)
+            .await;
+
+        tracing::info!("shutdown");
     }
 
     /// task
@@ -71,6 +84,8 @@ impl Fetcher {
         client: Arc<pleiades_api::Client>,
         request: download_blob::Request,
     ) {
+        tracing::trace!("downloading blob: {}", request.blob_id);
+
         let download_request = pleiades_api::api::data::download::Request::builder()
             .data_id(&request.blob_id)
             .build();
@@ -79,6 +94,8 @@ impl Fetcher {
 
         match download_response {
             Ok(response) => {
+                tracing::debug!("downloaded blob: {}", request.blob_id);
+
                 request
                     .response_sender
                     .send(download_blob::Response {
@@ -90,6 +107,8 @@ impl Fetcher {
                     .expect("fetcher");
             }
             Err(_) => {
+                tracing::debug!("blob not found: {}", request.blob_id);
+
                 request
                     .response_sender
                     .send(download_blob::Response { blob: None })
@@ -118,19 +137,6 @@ impl Fetcher {
                 },
             })
             .expect("fetcher");
-    }
-
-    /// wait_for_shutdown
-    ///
-    pub async fn wait_for_shutdown(&self) {
-        println!("Fetcher is shutting down");
-
-        while self.task_counter.load(Ordering::Relaxed) > 0 {
-            print!(".");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-
-        println!("Fetcher is shut down");
     }
 }
 

@@ -1,5 +1,5 @@
 use std::{sync::Arc, time::Duration};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Semaphore};
 
 use crate::{
     data_manager,
@@ -26,11 +26,8 @@ pub struct Contractor {
 
     /// semaphore
     ///
-    semaphore: Arc<tokio::sync::Semaphore>,
-
-    /// max_concurrency
-    ///
     max_concurrency: usize,
+    semaphore: Arc<Semaphore>,
 }
 
 impl Contractor {
@@ -47,8 +44,8 @@ impl Contractor {
             client,
             data_manager_controller,
             command_receiver,
-            semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrency)),
             max_concurrency,
+            semaphore: Arc::new(Semaphore::new(max_concurrency)),
         };
 
         let controller = Controller {
@@ -65,14 +62,16 @@ impl Contractor {
     ///
     ///
     pub async fn run(&mut self) {
-        tracing::debug!("Contractor is running");
+        tracing::info!("running");
+
+        // let mut count = 0;
 
         while let Some(command) = self.command_receiver.recv().await {
             let client = self.client.clone();
             let data_manager_controller = self.data_manager_controller.clone();
 
             if self.semaphore.available_permits() == 0 {
-                println!("Contractor: busy");
+                tracing::warn!("Contractor is busy");
             }
 
             let permit = self.semaphore.clone().acquire_owned().await.unwrap();
@@ -83,11 +82,28 @@ impl Contractor {
                         Self::task_contract(client, data_manager_controller, request).await
                     }
                 }
+
                 let _permit = permit;
             });
+
+            // count += 1;
         }
 
         self.wait_for_shutdown().await;
+    }
+
+    async fn wait_for_shutdown(&self) {
+        tracing::debug!(
+            "shutting down {} tasks",
+            self.max_concurrency - self.semaphore.available_permits()
+        );
+
+        let _ = self
+            .semaphore
+            .acquire_many(self.max_concurrency as u32)
+            .await;
+
+        tracing::info!("shutdown");
     }
 
     /// contract_task
@@ -100,6 +116,7 @@ impl Contractor {
         data_manager_controller: data_manager::Controller,
         request: contract::Request,
     ) {
+        tracing::debug!("contracting: worker_id={}", request.worker_id);
         // Fetch a new job
         //
         let contract_request = pleiades_api::api::worker::contract::Request::builder()
@@ -108,7 +125,6 @@ impl Contractor {
             .build();
 
         let contract_response = client.call_api(&contract_request).await;
-
         let maybe_job = contract_response.expect("no error handling: contract");
         // let maybe_job = match contract_response {
         //     Ok(response) => response,
@@ -123,8 +139,13 @@ impl Contractor {
         // };
 
         let job_id = match maybe_job.job_id {
-            Some(job_id) => job_id,
+            Some(job_id) => {
+                tracing::info!("contracted");
+                job_id
+            }
             None => {
+                tracing::debug!("no job");
+
                 request
                     .response_sender
                     .send(contract::Response { contracted: None })
@@ -140,7 +161,6 @@ impl Contractor {
             .build();
 
         let info_response = client.call_api(&info_request).await;
-
         let job_info = info_response.expect("no error handling: job info");
         // let info = match info_response {
         //     Ok(response) => response,
@@ -175,9 +195,9 @@ impl Contractor {
             lambda: Box::new(Lambda {
                 id: job_info.lambda.lambda_id,
                 runtime: job_info.lambda.runtime,
-                code: code.expect("contractor: code"),
+                code: code.expect("code"),
             }),
-            input: Box::new(input.expect("contractor: input")),
+            input: Box::new(input.expect("input")),
         };
 
         request
@@ -186,22 +206,8 @@ impl Contractor {
                 contracted: Some(job),
             })
             .expect("contractor");
-    }
 
-    /// wait_for_shutdown
-    ///
-    ///
-    ///
-    ///
-    pub async fn wait_for_shutdown(&self) {
-        println!("Contractor is shutting down");
-
-        while self.semaphore.available_permits() != self.max_concurrency {
-            print!(".");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-
-        println!("Contractor is shut down");
+        tracing::debug!("enqueue job");
     }
 }
 

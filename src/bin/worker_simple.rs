@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use bytes::Bytes;
 use pleiades_worker::{
@@ -14,6 +17,14 @@ async fn main() {
     //
     dotenvy::dotenv().expect(".env file not found");
     let pleiades_url = std::env::var("PLEIADES_URL").expect("PLEIADES_URL must be set");
+    //
+    // /////
+
+    // Initialize tracing
+    //
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
+        .init();
     //
     // /////
 
@@ -73,13 +84,14 @@ async fn loop_contractor(
 ) {
     let mut join_set = JoinSet::new();
 
-    for _ in 0..8 {
+    for i in 0..8 {
         let contractor_api = contractor_api.clone();
         let worker_id = worker_id.clone();
         let job_sender = job_sender.clone();
 
         join_set.spawn(async move {
-            while let Some(job) = contractor_api
+            // while let Some(job) = contractor_api
+            if let Some(job) = contractor_api
                 .try_contract(worker_id.clone())
                 .await
                 .unwrap()
@@ -87,9 +99,32 @@ async fn loop_contractor(
                 .await
                 .contracted
             {
+                println!("contracotr {}: contracted", i);
                 job_sender.send((job, Instant::now())).await.unwrap();
             }
         });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        // let handle = contractor_api
+        //     .try_contract(worker_id.clone())
+        //     .await
+        //     .unwrap();
+
+        // let job_sender = job_sender.clone();
+
+        // join_set.spawn(async move {
+        //     match handle.recv().await.contracted {
+        //         Some(job) => {
+        //             println!("contractor {}: contracted", i);
+        //             job_sender.send((job, Instant::now())).await.unwrap();
+        //         }
+        //         None => {
+        //             println!("contractor {}: no job", i);
+        //         }
+        //     }
+        //     // println!("{:?}", handle.recv().await);
+        // });
     }
 
     join_set.join_all().await;

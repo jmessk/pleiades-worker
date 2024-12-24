@@ -100,24 +100,24 @@ impl Blob {
 
         // Create a request object and insert it into the context
         RuntimeRequest::Blob(blob::Request::Get(blob_id)).insert(context.realm());
-        println!("Blob.get: request inserted into context");
+        tracing::trace!("request inserted into context");
 
         let (promise, resolver) = JsPromise::new_pending(context);
 
         let job = NativeJob::new(move |context| {
-            println!("Blob.get: job called");
+            tracing::trace!("promise job called");
+
             let response = RuntimeResponse::extract(context.realm());
 
             let result = match response {
                 Some(RuntimeResponse::Blob(blob::Response::Get(Some(blob)))) => {
                     let array = JsUint8Array::from_iter(blob.data, context)?;
-                    println!("Blob.get: response found: {:?}", array);
+                    tracing::trace!("response found: {:?}", array);
 
                     JsValue::from(array)
                 }
                 _ => {
-                    println!("Blob.get: response not found");
-
+                    tracing::trace!("response not found");
                     JsValue::undefined()
                 }
             };

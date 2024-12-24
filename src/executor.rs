@@ -20,7 +20,7 @@ pub struct Executor {
 
     /// id_num
     ///
-    _id: usize,
+    id: usize,
 
     /// updater
     ///
@@ -47,20 +47,14 @@ impl Executor {
     ///
     ///
     ///
-    pub fn new(
-        // pending_manager_controller: pending_manager::Controller,
-        // scheduler_controller: scheduler::Controller,
-        id: usize,
-    ) -> (Self, Controller) {
+    pub fn new(id: usize) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
         let max_queueing_time = Arc::new(Mutex::new(Duration::from_secs(0)));
 
         let data_manager = Self {
             command_receiver,
-            _id: id,
-            // scheduler_controller: None,
-            // pending_manager_controller: None,
+            id,
             max_queueing_time: max_queueing_time.clone(),
             runtime: JsRuntime::init(),
         };
@@ -92,11 +86,17 @@ impl Executor {
     ///
     ///
     pub fn run(&mut self) {
+        tracing::info!("Executor {}: running", self.id);
+
         while let Some(command) = self.command_receiver.blocking_recv() {
+            tracing::debug!("Executor {}: start execute", self.id);
+
             match command {
                 Command::Register(request) => self.task_execute_job(request),
             }
         }
+
+        tracing::info!("Executor {}: shutdown", self.id);
     }
 
     fn task_execute_job(&mut self, request: register::Request) {
@@ -134,7 +134,7 @@ impl Executor {
                         self.runtime.set_context(context);
                     }
                     Err(e) => {
-                        println!("Executor error: {}", e);
+                        tracing::error!("Executor {}: {}", self.id, e);
                         job.cancel();
                         // scheduler_controller.enqueue_nowait(job);
                         request
@@ -177,7 +177,10 @@ impl Executor {
             let job_status = self.runtime.execute().unwrap();
 
             // stop measuring time
-            job.sub_remaining_time(start.elapsed());
+            let elapsed = start.elapsed();
+            tracing::debug!("Executor {}: job elapsed {:?}", self.id, elapsed);
+
+            job.sub_remaining_time(elapsed);
 
             job_status
         };
@@ -189,8 +192,6 @@ impl Executor {
                 .unwrap()
                 .sub_assign(job_remaining_time);
         }
-
-        println!("Job status: {:?}", job_status);
 
         let job = match job_status {
             JobStatus::Finished(_) => Job {
@@ -220,6 +221,8 @@ impl Executor {
             .response_sender
             .send(register::Response { job })
             .unwrap();
+
+        tracing::trace!("Executor {}: finish execute", self.id);
 
         // self.scheduler_controller
         //     .as_mut()
@@ -317,9 +320,7 @@ impl Controller {
     ///
     ///
     pub fn max_queueing_time(&self) -> Duration {
-        let a = *self.max_queueing_time.lock().unwrap();
-        println!("Executor Controller: max_queueing_time: {:?}", a);
-        a
+        *self.max_queueing_time.lock().unwrap()
     }
 
     // /// get_blob
@@ -343,9 +344,6 @@ impl Controller {
                 .lock()
                 .unwrap()
                 .add_assign(job.remaining_time);
-
-            let a = *self.max_queueing_time.lock().unwrap();
-            println!("Executor Controller: max_queueing_time: {:?}", a);
         }
 
         let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
@@ -356,6 +354,7 @@ impl Controller {
         });
 
         self.command_sender.send(request).await.unwrap();
+        tracing::debug!("Executor {}: enqueued", self.id);
 
         register::Handle { response_receiver }
     }
@@ -381,14 +380,16 @@ pub enum Command {
 // }
 
 pub mod register {
+    use tokio::sync::oneshot;
+
     use super::*;
 
     pub struct Handle {
-        pub response_receiver: tokio::sync::oneshot::Receiver<Response>,
+        pub response_receiver: oneshot::Receiver<Response>,
     }
 
     pub struct Request {
-        pub response_sender: tokio::sync::oneshot::Sender<Response>,
+        pub response_sender: oneshot::Sender<Response>,
         pub job: Job,
     }
 

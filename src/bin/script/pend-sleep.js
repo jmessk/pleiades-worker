@@ -1,15 +1,12 @@
 import { blob } from "pleiades"
 
 async function fetch(input) {
-    console.log("get-blob.js");
+    console.log("pend-sleep.js");
 
     let data = await blob.get("0");
+    sleep(1000);
 
-    // for (let i = 0; i < 10; i++) {
-    //     await blob.get("0");
-    // }
-
-    // console.log("got blob");
+    console.log("got blob");
 
     return "test_output";
 }

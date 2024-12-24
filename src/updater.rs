@@ -1,8 +1,5 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
     data_manager,
@@ -27,8 +24,8 @@ pub struct Updater {
     command_receiver: mpsc::Receiver<Command>,
 
     /// number of jobs currently being contracted
-    ///
-    task_counter: Arc<AtomicUsize>,
+    max_concurrency: usize,
+    semaphore: Arc<Semaphore>,
 }
 
 impl Updater {
@@ -44,7 +41,8 @@ impl Updater {
             client,
             data_manager_controller,
             command_receiver,
-            task_counter: Arc::new(AtomicUsize::new(0)),
+            max_concurrency: 64,
+            semaphore: Arc::new(Semaphore::new(64)),
         };
 
         let controller = Controller { command_sender };
@@ -63,27 +61,43 @@ impl Updater {
     /// run
     ///
     pub async fn run(&mut self) {
+        tracing::info!("running");
+
         while let Some(command) = self.command_receiver.recv().await {
+            tracing::trace!("updating job");
+
             // clone fields to bind
             let client = self.client.clone();
             let data_manager_controller = self.data_manager_controller.clone();
-            let task_counter = self.task_counter.clone();
+            let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
             // new task
             tokio::spawn(async move {
-                task_counter.fetch_add(1, Ordering::Relaxed);
-
                 match command {
                     Command::FinishJob(request) => {
                         Self::task_update_job(client, data_manager_controller, request).await
                     }
                 }
 
-                task_counter.fetch_sub(1, Ordering::Relaxed);
+                let _ = permit;
             });
         }
 
         self.wait_for_shutdown().await;
+    }
+
+    async fn wait_for_shutdown(&self) {
+        tracing::debug!(
+            "shutting down {} tasks",
+            self.max_concurrency - self.semaphore.available_permits()
+        );
+
+        let _ = self
+            .semaphore
+            .acquire_many(self.max_concurrency as u32)
+            .await;
+
+        tracing::info!("shutdown");
     }
 
     /// task
@@ -110,6 +124,8 @@ impl Updater {
                     .call_api(&update_request)
                     .await
                     .expect("no error handling: update");
+
+                tracing::info!("updated finished job");
             }
             JobStatus::Cancelled => {
                 let update_request = pleiades_api::api::job::update::Request::builder()
@@ -122,21 +138,11 @@ impl Updater {
                     .call_api(&update_request)
                     .await
                     .expect("no error handling: update");
+
+                tracing::info!("updated cancelled job");
             }
             _ => {}
         };
-    }
-
-    /// wait_for_shutdown
-    ///
-    pub async fn wait_for_shutdown(&self) {
-        println!("Updater is shutting down");
-
-        while self.task_counter.load(Ordering::Relaxed) > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-
-        println!("Updater is shut down");
     }
 }
 
@@ -302,7 +308,8 @@ mod tests {
 
         let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
         let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_api);
-        let (mut contractor, api) = Contractor::new(client.clone(), data_manager_controller.clone(), 16);
+        let (mut contractor, api) =
+            Contractor::new(client.clone(), data_manager_controller.clone(), 16);
         let (mut updater, _updater_api) = Updater::new(client.clone(), data_manager_controller);
 
         tokio::spawn(async move {

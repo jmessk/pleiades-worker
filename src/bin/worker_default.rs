@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use pleiades_worker::{
     executor::Executor, Contractor, DataManager, ExecutorManager, Fetcher, PendingManager,
@@ -20,12 +20,9 @@ async fn main() {
 
     // Initialize tracing
     //
-    // let filter = tracing_subscriber::EnvFilter::try_new("pleiades-worker=trace").unwrap();
-    // let filter = tracing_subscriber::filter::Targets::new()
-    //     .with_target("pleiades-worker", tracing::Level::TRACE);
-    tracing_subscriber::fmt::fmt()
-        .with_max_level(tracing::Level::TRACE)
-        .fil
+    tracing_subscriber::fmt()
+        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=info"))
+        .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
         .init();
     //
     // /////
@@ -76,7 +73,7 @@ async fn main() {
 
     for i in 0..NUM_EXECUTORS {
         let (mut executor, executor_controller) = Executor::new(i);
-        executor_manager_builder.insert(executor_controller);
+        executor_manager_builder.insert(executor_controller, Duration::from_millis(300));
 
         join_set.spawn_blocking(move || executor.run());
     }
@@ -98,8 +95,6 @@ async fn main() {
     join_set.spawn(async move {
         scheduler.run().await;
     });
-
-    println!("Worker started");
 
     tokio::signal::ctrl_c().await.unwrap();
     scheduler_controller.signal_shutdown().await;

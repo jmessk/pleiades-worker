@@ -1,7 +1,6 @@
 use bytes::Bytes;
-use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicUsize, Arc};
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Semaphore};
 
 use crate::data_manager;
 use crate::pleiades_type::{Job, JobStatus};
@@ -17,9 +16,8 @@ pub struct PendingManager {
     ///
     command_receiver: mpsc::Receiver<Command>,
 
-    /// number of tasks currently being processed
-    ///
-    task_counter: Arc<AtomicUsize>,
+    max_concurrency: usize,
+    semaphore: Arc<Semaphore>,
 
     /// scheduler_controller
     ///
@@ -45,7 +43,8 @@ impl PendingManager {
 
         let data_manager = Self {
             command_receiver,
-            task_counter: Arc::new(AtomicUsize::new(0)),
+            max_concurrency: 128,
+            semaphore: Arc::new(Semaphore::new(128)),
             // scheduler_controller: None,
             data_manager_controller,
             http_client: reqwest::Client::new(),
@@ -56,19 +55,13 @@ impl PendingManager {
         (data_manager, controller)
     }
 
-    /// set_controller
-    ///
-    ///
-    // pub fn set_controller(&mut self, scheduler_controller: scheduler::Controller) {
-    //     self.scheduler_controller = Some(scheduler_controller);
-    // }
-
     /// run
     ///
     ///
     ///
     ///
     pub async fn run(&mut self) {
+        tracing::info!("running");
         // let scheduler_controller = self
         //     .scheduler_controller
         //     .as_mut()
@@ -183,6 +176,10 @@ impl PendingManager {
                 //
                 // register
                 Command::Register(request) => {
+                    if let JobStatus::Pending(ref request) = request.job.status {
+                        tracing::trace!("registered: {:?}", request);
+                    }
+
                     let mut job = request.job;
 
                     // extract request
@@ -190,17 +187,17 @@ impl PendingManager {
                     let runtime_request = if let JobStatus::Pending(request) = job.status {
                         request
                     } else {
-                        println!("PendingManager: request must be pending");
-                        println!("unreachable");
+                        tracing::error!("PendingManager: request must be pending");
                         continue;
                     };
                     //
                     // /////
 
-                    self.task_counter.fetch_add(1, Ordering::Relaxed);
+                    // self.task_counter.fetch_add(1, Ordering::Relaxed);
 
                     // clone to move
-                    let task_counter = self.task_counter.clone();
+                    // let task_counter = self.task_counter.clone();
+                    let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
                     match runtime_request {
                         // blob
@@ -220,7 +217,8 @@ impl PendingManager {
                                     .send(register::Response { job })
                                     .unwrap();
 
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
+                                let _ = permit;
+                                tracing::debug!("pend blob get done");
                             });
                         }
                         RuntimeRequest::Blob(blob::Request::Post(data)) => {
@@ -235,7 +233,8 @@ impl PendingManager {
                                     .send(register::Response { job })
                                     .unwrap();
 
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
+                                let _ = permit;
+                                tracing::debug!("pend blob post done");
                             });
                         }
                         //
@@ -245,11 +244,12 @@ impl PendingManager {
                         // gpu
                         //
                         //
-                        RuntimeRequest::Gpu(gpu::Request { data }) => {
+                        RuntimeRequest::Gpu(gpu::Request { data: _ }) => {
                             job.status = JobStatus::Resolving;
 
                             tokio::spawn(async move {
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
+                                let _ = permit;
+                                tracing::debug!("pend gpu done");
                             });
                         }
                         //
@@ -272,7 +272,8 @@ impl PendingManager {
                                     .send(register::Response { job })
                                     .unwrap();
 
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
+                                let _ = permit;
+                                tracing::debug!("pend http get done");
                             });
                         }
                         RuntimeRequest::Http(http::Request::Post { url, body }) => {
@@ -287,7 +288,8 @@ impl PendingManager {
                                     .send(register::Response { job })
                                     .unwrap();
 
-                                task_counter.fetch_sub(1, Ordering::Relaxed);
+                                let _ = permit;
+                                tracing::debug!("pend http post done");
                             });
                         } //
                           //
@@ -298,6 +300,20 @@ impl PendingManager {
         }
 
         self.wait_for_shutdown().await;
+    }
+
+    async fn wait_for_shutdown(&self) {
+        tracing::debug!(
+            "shutting down {} tasks",
+            self.max_concurrency - self.semaphore.available_permits()
+        );
+
+        let _ = self
+            .semaphore
+            .acquire_many(self.max_concurrency as u32)
+            .await;
+
+        tracing::info!("shutdown");
     }
 
     /// task_blob_get
@@ -346,7 +362,7 @@ impl PendingManager {
                     JobStatus::Ready(RuntimeResponse::Http(http::Response::Get(Some(body))));
             }
             None => {
-                println!("http get failed");
+                tracing::error!("http get failed");
                 job.status = JobStatus::Ready(RuntimeResponse::Http(http::Response::Get(None)));
             }
         }
@@ -373,24 +389,12 @@ impl PendingManager {
                     JobStatus::Ready(RuntimeResponse::Http(http::Response::Post(Some(body))));
             }
             None => {
-                println!("http post failed");
+                tracing::error!("http post failed");
                 job.status = JobStatus::Ready(RuntimeResponse::Http(http::Response::Post(None)));
             }
         }
 
         // scheduler_controller.enqueue(job).await;
-    }
-
-    /// wait_for_shutdown
-    ///
-    pub async fn wait_for_shutdown(&self) {
-        println!("Pending Manager is shutting down");
-
-        while self.task_counter.load(Ordering::Relaxed) > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-
-        println!("Pending Manager is shut down");
     }
 }
 

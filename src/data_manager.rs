@@ -1,7 +1,6 @@
 use bytes::Bytes;
-use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicUsize, Arc};
-use tokio::sync::{mpsc, oneshot};
+use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot, Semaphore};
 
 use crate::fetcher;
 use crate::pleiades_type::Blob;
@@ -20,7 +19,8 @@ pub struct DataManager {
 
     /// number of jobs currently being contracted
     ///
-    task_counter: Arc<AtomicUsize>,
+    max_concurrency: usize,
+    semaphore: Arc<Semaphore>,
 }
 
 impl DataManager {
@@ -35,7 +35,8 @@ impl DataManager {
         let data_manager = Self {
             fetcher_controller,
             command_receiver,
-            task_counter: Arc::new(AtomicUsize::new(0)),
+            max_concurrency: 64,
+            semaphore: Arc::new(Semaphore::new(64)),
         };
 
         let controller = Controller { command_sender };
@@ -49,23 +50,40 @@ impl DataManager {
     ///
     ///
     pub async fn run(&mut self) {
+        tracing::info!("running");
+
         while let Some(command) = self.command_receiver.recv().await {
             let fetcher_controller = self.fetcher_controller.clone();
-            let task_counter = self.task_counter.clone();
+            let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
             tokio::spawn(async move {
-                task_counter.fetch_add(1, Ordering::Relaxed);
-
                 match command {
-                    Command::GetBlob(request) => Self::task_get_blob(fetcher_controller, request).await,
-                    Command::PostBlob(request) => Self::task_post_blob(fetcher_controller, request).await,
+                    Command::GetBlob(request) => {
+                        Self::task_get_blob(fetcher_controller, request).await
+                    }
+                    Command::PostBlob(request) => {
+                        Self::task_post_blob(fetcher_controller, request).await
+                    }
                 }
-
-                task_counter.fetch_sub(1, Ordering::Relaxed);
+                let _ = permit;
             });
         }
 
         self.wait_for_shutdown().await;
+    }
+
+    async fn wait_for_shutdown(&self) {
+        tracing::debug!(
+            "shutting down {} tasks",
+            self.max_concurrency - self.semaphore.available_permits()
+        );
+
+        let _ = self
+            .semaphore
+            .acquire_many(self.max_concurrency as u32)
+            .await;
+
+        tracing::info!("shutdown");
     }
 
     /// task
@@ -74,6 +92,8 @@ impl DataManager {
     ///
     ///
     async fn task_get_blob(fetcher_controller: fetcher::Controller, request: get_blob::Request) {
+        tracing::trace!("getting blob");
+
         let download_handle = fetcher_controller.download_blob(request.blob_id).await;
         let response = download_handle.recv().await;
 
@@ -83,6 +103,8 @@ impl DataManager {
                 blob: response.blob,
             })
             .expect("fetcher");
+
+        tracing::debug!("got blob");
     }
 
     /// task
@@ -91,6 +113,8 @@ impl DataManager {
     ///
     ///
     async fn task_post_blob(fetcher_controller: fetcher::Controller, request: post_blob::Request) {
+        tracing::trace!("posting blob");
+
         let upload_handle = fetcher_controller.upload_blob(request.data.clone()).await;
         let blob = upload_handle.recv().await.blob;
 
@@ -103,22 +127,8 @@ impl DataManager {
                 },
             })
             .expect("data_manager");
-    }
 
-    /// wait_for_shutdown
-    ///
-    ///
-    ///
-    ///
-    pub async fn wait_for_shutdown(&self) {
-        println!("Data Manager is shutting down");
-
-        while self.task_counter.load(Ordering::Relaxed) > 0 {
-            print!(".");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-
-        println!("Data Manager is shut down");
+        tracing::debug!("posted blob");
     }
 }
 
