@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::runtime::{RuntimeContext, RuntimeRequest, RuntimeResponse};
 
@@ -50,32 +50,33 @@ impl Default for Lambda {
 ///
 ///
 ///
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Job {
-    /// status of the job
-    ///
     pub status: JobStatus,
-
-    /// remaining time that the job can consume
-    ///
     pub rem_time: Duration,
-
-    /// context of the job
-    /// runtimes need to implement their own context
-    ///
     pub context: Option<RuntimeContext>,
 
-    /// id of the job
-    ///
     pub id: String,
-
-    /// lambda of the job
-    ///
     pub lambda: Box<Lambda>,
-
-    /// input of the job
-    ///
     pub input: Box<Blob>,
+
+    pub instant: Instant,
+}
+
+impl Default for Job {
+    fn default() -> Self {
+        Self {
+            status: JobStatus::Assigned,
+            rem_time: Duration::from_secs(0),
+            context: None,
+
+            id: "default".into(),
+            lambda: Box::new(Lambda::default()),
+            input: Box::new(Blob::default()),
+
+            instant: Instant::now(),
+        }
+    }
 }
 
 impl Job {
@@ -103,8 +104,7 @@ impl Job {
     ///
     pub fn cancel(&mut self) {
         self.status = JobStatus::Cancelled;
-
-        // println!("Job is cancelled: {:?}", self);
+        tracing::warn!("Job {} is cancelled", self.id);
     }
 }
 

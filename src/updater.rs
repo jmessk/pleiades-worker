@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
@@ -63,6 +63,9 @@ impl Updater {
     pub async fn run(&mut self) {
         tracing::info!("running");
 
+        // edit
+        let mut join_set = tokio::task::JoinSet::new();
+
         while let Some(command) = self.command_receiver.recv().await {
             tracing::trace!("updating job");
 
@@ -72,18 +75,26 @@ impl Updater {
             let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
             // new task
-            tokio::spawn(async move {
-                match command {
-                    Command::FinishJob(request) => {
-                        Self::task_update_job(client, data_manager_controller, request).await
-                    }
+            match command {
+                Command::FinishJob(request) => {
+                    // tokio::spawn(async move {
+                    join_set.spawn(async move {
+                        // Self::task_update_job(client, data_manager_controller, request).await
+                        let metric =
+                            Self::task_update_job_metrics(client, data_manager_controller, request)
+                                .await;
+                        drop(permit);
+                        metric
+                    });
                 }
-
-                drop(permit);
-            });
+            }
         }
 
         self.wait_for_shutdown().await;
+
+        // edit
+        let metrics = join_set.join_all().await;
+        save_csv(metrics);
     }
 
     async fn wait_for_shutdown(&self) {
@@ -102,7 +113,7 @@ impl Updater {
 
     /// task
     ///
-    async fn task_update_job(
+    async fn _task_update_job(
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
         request: update::Request,
@@ -144,6 +155,91 @@ impl Updater {
             _ => {}
         };
     }
+
+    async fn task_update_job_metrics(
+        client: Arc<pleiades_api::Client>,
+        data_manager_controller: data_manager::Controller,
+        request: update::Request,
+    ) -> (String, String, &'static str, Duration) {
+        match request.job.status {
+            JobStatus::Finished(output) => {
+                let elapsed = request.job.instant.elapsed();
+                let output = output.unwrap_or(bytes::Bytes::new());
+
+                let post_handle = data_manager_controller.post_blob(output).await;
+                let post_response = post_handle.recv().await;
+
+                let update_request = pleiades_api::api::job::update::Request::builder()
+                    .job_id(&request.job.id)
+                    .data_id(post_response.blob.id)
+                    .status("finished")
+                    .build();
+
+                let _update_response = client
+                    .call_api(&update_request)
+                    .await
+                    .expect("no error handling: update");
+
+                tracing::info!("updated finished job");
+
+                (
+                    request.job.id,
+                    request.job.lambda.runtime,
+                    "Finished",
+                    elapsed,
+                )
+            }
+            JobStatus::Cancelled => {
+                let update_request = pleiades_api::api::job::update::Request::builder()
+                    .job_id(&request.job.id)
+                    .data_id("0")
+                    .status("cancelled")
+                    .build();
+
+                let _update_response = client
+                    .call_api(&update_request)
+                    .await
+                    .expect("no error handling: update");
+
+                tracing::info!("updated cancelled job");
+
+                (
+                    request.job.id,
+                    request.job.lambda.runtime,
+                    "Cancelled",
+                    Duration::ZERO,
+                )
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+fn save_csv(metrics: Vec<(String, String, &'static str, Duration)>) {
+    use chrono;
+    use std::fs::File;
+    use std::io::prelude::*;
+
+    let file_name = format!(
+        "metrics/{}.csv",
+        chrono::Local::now().format("%Y_%m%d_%H%M%S")
+    );
+    let mut file = File::create(file_name).unwrap();
+
+    file.write_all(b"job_id,runtime,elapsed_ms\n").unwrap();
+
+    metrics
+        .iter()
+        .for_each(|(job_id, runtime, status, elapsed)| {
+            let line = format!(
+                "{},{},{},{}\n",
+                job_id,
+                runtime,
+                status,
+                elapsed.as_millis()
+            );
+            file.write_all(line.as_bytes()).unwrap();
+        });
 }
 
 /// Api

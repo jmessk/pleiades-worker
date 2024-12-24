@@ -6,7 +6,6 @@ pub mod fetcher;
 pub mod helper;
 pub mod pending_manager;
 pub mod pleiades_type;
-pub mod policy;
 pub mod runtime;
 pub mod scheduler;
 pub mod updater;

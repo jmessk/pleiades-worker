@@ -134,7 +134,7 @@ impl Executor {
                         self.runtime.set_context(context);
                     }
                     Err(e) => {
-                        tracing::error!("Executor {}: {}", self.id, e);
+                        tracing::warn!("Executor {}: {}", self.id, e);
                         job.cancel();
                         // scheduler_controller.enqueue_nowait(job);
                         request

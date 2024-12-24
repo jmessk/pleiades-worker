@@ -6,7 +6,7 @@ use crate::{
     helper::{ExecutorManager, WorkerIdManager},
     pending_manager,
     pleiades_type::{Job, JobStatus},
-    policy, updater,
+    updater,
 };
 
 /// Controllers
@@ -89,8 +89,6 @@ impl Scheduler {
     ///
     ///
     async fn schedule_shutdown(&self) {
-        tracing::info!("waiting for shutdown");
-
         let scheduler_controller = self.controllers.scheduler.clone();
         let semaphore = self.semaphore.clone();
         let max_concurrency = self.max_concurrency;
@@ -100,16 +98,7 @@ impl Scheduler {
             scheduler_controller.signal_shutdown_done().await;
         });
 
-        // tokio::spawn(async move {
-        //     tracing::info!("waiting for shutdown");
-
-        //     while task_counter.load(Ordering::Relaxed) > 0 {
-        //         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        //         scheduler_controller.signal_shutdown().await;
-
-        //         tracing::debug!("tasks: {}", task_counter.load(Ordering::Relaxed));
-        //     }
-        // });
+        tracing::info!("scheduled shutdown");
     }
 
     /// contract_background
@@ -169,7 +158,7 @@ impl Scheduler {
     ///
     ///
     ///
-    async fn fast_contract_policy(&mut self) {
+    async fn _fast_contract_policy(&mut self) {
         let mut shutdown_flag = false;
 
         let default_worker_id = self.worker_id_manager.get_default();
@@ -293,7 +282,7 @@ impl Scheduler {
 
         let capacity_sum = deadline_sum - (queuing_time_sum + pending + contracting);
 
-        let available_jobs = std::cmp::max(
+        let available_jobs = std::cmp::min(
             capacity_sum.div_duration_f32(job_deadline) as usize,
             self.controllers.contractor.max_concurrency,
         );

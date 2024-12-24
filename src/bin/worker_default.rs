@@ -21,8 +21,8 @@ async fn main() {
     // Initialize tracing
     //
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=info"))
-        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
+        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=info"))
+        .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
         .init();
     //
     // /////

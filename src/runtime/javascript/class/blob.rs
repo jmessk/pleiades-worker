@@ -39,57 +39,6 @@ impl Class for Blob {
 }
 
 impl Blob {
-    // pub fn get(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    //     println!("Blob.get: called: {:?}", args);
-
-    //     let blob_id = match args.first() {
-    //         Some(blob_id) => blob_id.to_string(context)?.to_std_string_escaped(),
-    //         None => {
-    //             return Err(JsError::from_native(
-    //                 JsNativeError::error().with_message("Blob.get: blob_id is required"),
-    //             ))
-    //         }
-    //     };
-
-    //     // Create a request object and insert it into the context
-    //     RuntimeRequest::Blob(blob::Request::Get(blob_id)).insert_into_context(context.realm());
-    //     println!("Blob.get: request inserted into context");
-
-    //     // need to delete
-    //     // RuntimeResponse::Blob(blob::Response::Get("test_insert".into()))
-    //     //     .insert_into_context(context.realm());
-
-    //     let executor = |resolvers: &ResolvingFunctions, context: &mut Context| {
-    //         println!("Blob.get: executor called");
-
-    //         let response = RuntimeResponse::get_from_context(context.realm());
-
-    //         let result = match response {
-    //             Some(RuntimeResponse::Blob(blob::Response::Get(data))) => {
-    //                 let array = JsUint8Array::from_iter(data, context)?;
-    //                 println!("Blob.get: response found: {:?}", array);
-
-    //                 JsValue::from(array)
-    //             }
-    //             _ => {
-    //                 println!("Blob.get: response not found");
-
-    //                 JsValue::undefined()
-    //             }
-    //         };
-
-    //         let _ = resolvers
-    //             .resolve
-    //             .call(&JsValue::undefined(), &[result], context)?;
-
-    //         Ok(JsValue::undefined())
-    //     };
-
-    //     let promise = JsPromise::new(executor, context);
-
-    //     Ok(JsValue::from(promise))
-    // }
-
     pub fn get(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
         let blob_id = args
             .first()

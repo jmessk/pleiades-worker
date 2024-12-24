@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use pleiades::feature::id;
-
 const ITERATION: usize = 100;
 const INTERVAL: Duration = Duration::from_millis(20);
 
@@ -18,12 +16,12 @@ async fn main() {
 
     // let script = include_bytes!("./script/hello.js");
     // let script = include_bytes!("./script/counter.js");
-    let script = include_bytes!("./script/sleep.js");
+    // let script = include_bytes!("./script/sleep.js");
     // let script = include_bytes!("./script/get-blob.js");
+    let script = include_bytes!("./script/get-blob-10.js");
     // let script = include_bytes!("./script/pend-sleep.js");
 
     let lambda_blob = client.blob().new(script.as_ref()).await.unwrap();
-
     let lambda = lambda_blob.into_lambda("pleiades+example").await.unwrap();
 
     let input = client
@@ -35,47 +33,57 @@ async fn main() {
     let mut job_list = tokio::task::JoinSet::new();
     let mut ticker = tokio::time::interval(INTERVAL);
 
-    let start_outer = std::time::Instant::now();
-
     for i in 0..ITERATION {
         let lambda = lambda.clone();
         let input = input.clone();
 
         job_list.spawn(async move {
             println!("start job: {}", i);
-            lambda.invoke(input, None).await.unwrap()
+            let _job = lambda.invoke(input, None).await.unwrap();
+            // let _output = job.wait_finished(std::time::Duration::from_secs(10)).await;
         });
 
         ticker.tick().await;
     }
 
-    let job_list = job_list.join_all().await;
+    let _job_list = job_list.join_all().await;
 
-    let mut finished_job_list = tokio::task::JoinSet::new();
-    job_list.into_iter().for_each(|job| {
-        finished_job_list.spawn(async move {
-            let output = job.wait_finished(std::time::Duration::from_secs(10)).await;
+    // let mut finished_job_list = tokio::task::JoinSet::new();
 
-            match output {
-                Ok(finished_job) => Some(finished_job.id.0.into_owned()),
-                _ => {
-                    println!("job timeout");
-                    None
-                }
-            }
-        });
-    });
+    // wait the first job
+    // let first = job_list.first().unwrap().await;
+
+    // job_list.into_iter().for_each(|job| {
+    //     finished_job_list.spawn(async move {
+    //         let output = job.wait_finished(std::time::Duration::from_secs(10)).await;
+
+    //         match output {
+    //             Ok(finished_job) => Some(finished_job.id.0.into_owned()),
+    //             _ => {
+    //                 println!("job timeout");
+    //                 None
+    //             }
+    //         }
+    //     });
+    // });
 
     // join all and filter None
     // let finished_job_list = finished_job_list.join_all().await;
-    let finished_job_list: Vec<Option<String>> = finished_job_list.join_all().await;
-    println!("all jobs finished in {:?}", start_outer.elapsed());
+    // let finished_job_list: Vec<Option<String>> = finished_job_list.join_all().await;
+    // let num_timeout = finished_job_list.iter().filter(|job| job.is_none()).count();
+    // println!(
+    //     "all jobs finished in {:?}, num_timeout: {num_timeout}",
+    //     start_outer.elapsed()
+    // );
 
-    println!("start getting metrics");
-    get_job_metrics(&client, finished_job_list).await;
+    // println!("start getting metrics");
+    // let raw_metrics = get_job_metrics(&client, finished_job_list).await;
 }
 
-async fn get_job_metrics(client: &pleiades::Client, job_id_list: Vec<Option<String>>) {
+async fn _get_job_metrics(
+    client: &pleiades::Client,
+    job_id_list: Vec<Option<String>>,
+) -> Vec<serde_json::Value> {
     let mut metrics_list = tokio::task::JoinSet::new();
 
     job_id_list.into_iter().for_each(|job_id| match job_id {
@@ -90,13 +98,7 @@ async fn get_job_metrics(client: &pleiades::Client, job_id_list: Vec<Option<Stri
                     .await
                     .unwrap();
 
-                // println!("response: {:?}", response);
-
-                response
-                    .json::<serde_json::Value>()
-                    .await
-                    .unwrap()
-                    .to_string()
+                response.json::<serde_json::Value>().await.unwrap()
             });
         }
         None => {
@@ -104,6 +106,17 @@ async fn get_job_metrics(client: &pleiades::Client, job_id_list: Vec<Option<Stri
         }
     });
 
-    let metrics_list = metrics_list.join_all().await;
-    // println!("metrics_list: {:?}", metrics_list);
+    metrics_list.join_all().await
 }
+
+// fn write_csv(metrics_list: Vec<serde_json::Value>) {
+//     let timestump = Local::now().format("%H:%M:%S").to_string();
+//     let file_name = format!("requester_{}.csv", timestump);
+//     let mut file = std::fs::File::create(file_name).unwrap();
+
+//     file.write_all(b"id,total,sched\n").unwrap();
+
+//     metrics_list.into_iter().for_each(|metrics| {
+
+//     });
+// }

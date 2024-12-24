@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 
 use crate::{
@@ -196,6 +199,9 @@ impl Contractor {
                 code: code.expect("code"),
             }),
             input: Box::new(input.expect("input")),
+
+            // instant
+            instant: Instant::now(),
         };
 
         request
