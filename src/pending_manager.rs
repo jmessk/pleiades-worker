@@ -217,7 +217,8 @@ impl PendingManager {
                                     .send(register::Response { job })
                                     .unwrap();
 
-                                let _ = permit;
+                                drop(permit);
+        
                                 tracing::debug!("pend blob get done");
                             });
                         }
@@ -233,7 +234,8 @@ impl PendingManager {
                                     .send(register::Response { job })
                                     .unwrap();
 
-                                let _ = permit;
+                                drop(permit);
+        
                                 tracing::debug!("pend blob post done");
                             });
                         }
@@ -248,7 +250,8 @@ impl PendingManager {
                             job.status = JobStatus::Resolving;
 
                             tokio::spawn(async move {
-                                let _ = permit;
+                                drop(permit);
+        
                                 tracing::debug!("pend gpu done");
                             });
                         }
@@ -272,7 +275,8 @@ impl PendingManager {
                                     .send(register::Response { job })
                                     .unwrap();
 
-                                let _ = permit;
+                                drop(permit);
+        
                                 tracing::debug!("pend http get done");
                             });
                         }
@@ -288,7 +292,8 @@ impl PendingManager {
                                     .send(register::Response { job })
                                     .unwrap();
 
-                                let _ = permit;
+                                drop(permit);
+        
                                 tracing::debug!("pend http post done");
                             });
                         } //

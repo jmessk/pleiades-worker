@@ -79,7 +79,7 @@ impl Updater {
                     }
                 }
 
-                let _ = permit;
+                drop(permit);
             });
         }
 

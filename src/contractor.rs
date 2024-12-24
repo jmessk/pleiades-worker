@@ -6,7 +6,7 @@ use crate::{
     pleiades_type::{Job, JobStatus, Lambda},
 };
 
-const MAX_RUNNABLE: Duration = Duration::from_millis(200);
+const MAX_RUNNABLE: Duration = Duration::from_millis(100);
 
 /// Contractor
 ///
@@ -83,10 +83,8 @@ impl Contractor {
                     }
                 }
 
-                let _permit = permit;
+                drop(permit);
             });
-
-            // count += 1;
         }
 
         self.wait_for_shutdown().await;
@@ -121,7 +119,7 @@ impl Contractor {
         //
         let contract_request = pleiades_api::api::worker::contract::Request::builder()
             .worker_id(request.worker_id)
-            .timeout(10)
+            .timeout(5)
             .build();
 
         let contract_response = client.call_api(&contract_request).await;
@@ -190,7 +188,7 @@ impl Contractor {
         let job = Job {
             id: job_id,
             status: JobStatus::Assigned,
-            remaining_time: MAX_RUNNABLE,
+            rem_time: MAX_RUNNABLE,
             context: None,
             lambda: Box::new(Lambda {
                 id: job_info.lambda.lambda_id,

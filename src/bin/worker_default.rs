@@ -13,16 +13,16 @@ const NUM_EXECUTORS: usize = 4;
 async fn main() {
     // Load .env file
     //
-    dotenvy::dotenv().expect(".env file not found");
-    let pleiades_url = std::env::var("PLEIADES_URL").expect("PLEIADES_URL must be set");
+    dotenvy::dotenv().unwrap();
+    let pleiades_url = std::env::var("PLEIADES_URL").unwrap();
     //
     // /////
 
     // Initialize tracing
     //
     tracing_subscriber::fmt()
-        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=info"))
-        .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
+        .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=info"))
+        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
         .init();
     //
     // /////
@@ -97,7 +97,7 @@ async fn main() {
     });
 
     tokio::signal::ctrl_c().await.unwrap();
-    scheduler_controller.signal_shutdown().await;
+    scheduler_controller.signal_shutdown_req().await;
 
     join_set.join_all().await;
 }

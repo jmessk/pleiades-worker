@@ -57,7 +57,7 @@ impl Fetcher {
                     Command::UploadBlob(request) => Self::task_upload_blob(client, request).await,
                 }
 
-                let _ = permit;
+                drop(permit);
             });
         }
 

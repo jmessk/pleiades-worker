@@ -1,19 +1,12 @@
-use std::{
-    ops::AddAssign,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
-use tokio::sync::mpsc;
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
     contractor, executor,
     helper::{ExecutorManager, WorkerIdManager},
     pending_manager,
     pleiades_type::{Job, JobStatus},
-    updater,
+    policy, updater,
 };
 
 /// Controllers
@@ -35,7 +28,8 @@ struct Controllers {
 ///
 pub struct Scheduler {
     command_receiver: mpsc::Receiver<Command>,
-    task_counter: Arc<AtomicUsize>,
+    max_concurrency: usize,
+    semaphore: Arc<Semaphore>,
 
     contracting: Duration,
     pending: Duration,
@@ -56,13 +50,14 @@ impl Scheduler {
         pending_manager_controller: pending_manager::Controller,
         executor_manager: ExecutorManager,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(128);
+        let (command_sender, command_receiver) = mpsc::channel(256);
 
         let controller = Controller { command_sender };
 
         let scheduler = Self {
             command_receiver,
-            task_counter: Arc::new(AtomicUsize::new(0)),
+            max_concurrency: 256,
+            semaphore: Arc::new(Semaphore::new(256)),
             contracting: Duration::default(),
             pending: Duration::default(),
             controllers: Controllers {
@@ -84,7 +79,8 @@ impl Scheduler {
     pub async fn run(&mut self) {
         tracing::info!("running");
 
-        self.fast_contract_policy().await;
+        // self.fast_contract_policy().await;
+        self.deadline_policy().await;
 
         tracing::info!("shutdown");
     }
@@ -92,26 +88,34 @@ impl Scheduler {
     /// wait_for_shutdown
     ///
     ///
-    async fn background_wait_shutdown(&self) {
-        let task_counter = self.task_counter.clone();
+    async fn schedule_shutdown(&self) {
+        tracing::info!("waiting for shutdown");
+
         let scheduler_controller = self.controllers.scheduler.clone();
+        let semaphore = self.semaphore.clone();
+        let max_concurrency = self.max_concurrency;
 
         tokio::spawn(async move {
-            tracing::info!("waiting for shutdown");
-
-            while task_counter.load(Ordering::Relaxed) > 0 {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                scheduler_controller.signal_shutdown().await;
-
-                tracing::debug!("tasks: {}", task_counter.load(Ordering::Relaxed));
-            }
+            let _ = semaphore.acquire_many(max_concurrency as u32).await;
+            scheduler_controller.signal_shutdown_done().await;
         });
+
+        // tokio::spawn(async move {
+        //     tracing::info!("waiting for shutdown");
+
+        //     while task_counter.load(Ordering::Relaxed) > 0 {
+        //         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        //         scheduler_controller.signal_shutdown().await;
+
+        //         tracing::debug!("tasks: {}", task_counter.load(Ordering::Relaxed));
+        //     }
+        // });
     }
 
     /// contract_background
     ///
     ///
-    async fn background_contract(&self, worker_id: &str) {
+    async fn back_contract(&self, worker_id: &str) {
         let handle = self
             .controllers
             .contractor
@@ -120,61 +124,58 @@ impl Scheduler {
             .unwrap();
 
         let scheduler_controller = self.controllers.scheduler.clone();
-        let task_counter = self.task_counter.clone();
+        let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
         tokio::spawn(async move {
-            task_counter.fetch_add(1, Ordering::Relaxed);
-
             let response = handle.recv().await;
             match response.contracted {
                 Some(job) => scheduler_controller.enqueue(job).await,
                 None => scheduler_controller.signal_no_job().await,
             }
 
-            task_counter.fetch_sub(1, Ordering::Relaxed);
+            drop(permit);
         });
     }
 
-    async fn background_execute(&self, job: Job, executor_controller: &executor::Controller) {
+    async fn enqueue_execute(&self, job: Job, executor_controller: &executor::Controller) {
         let handle = executor_controller.register(job).await;
         let scheduler_controller = self.controllers.scheduler.clone();
-        let task_counter = self.task_counter.clone();
+        let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
         tokio::spawn(async move {
-            task_counter.fetch_add(1, Ordering::Relaxed);
-
             let response = handle.response_receiver.await.unwrap();
             scheduler_controller.enqueue(response.job).await;
 
-            task_counter.fetch_sub(1, Ordering::Relaxed);
+            drop(permit);
         });
     }
 
-    async fn background_pend(&self, job: Job) {
+    async fn enqueue_pend(&self, job: Job) {
         let handle = self.controllers.pending.register(job).await;
         let scheduler_controller = self.controllers.scheduler.clone();
-        let task_counter = self.task_counter.clone();
+        let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
         tokio::spawn(async move {
-            task_counter.fetch_add(1, Ordering::Relaxed);
-
             let response = handle.response_receiver.await.unwrap();
             scheduler_controller.enqueue(response.job).await;
 
-            task_counter.fetch_sub(1, Ordering::Relaxed);
+            drop(permit);
         });
     }
 }
-
 impl Scheduler {
+    /// fast_contract_policy
+    ///
+    ///
+    ///
+    ///
     async fn fast_contract_policy(&mut self) {
         let mut shutdown_flag = false;
 
         let default_worker_id = self.worker_id_manager.get_default();
 
         for _ in 0..self.controllers.contractor.max_concurrency {
-            // for _ in 0..8 {
-            self.background_contract(&default_worker_id).await;
+            self.back_contract(&default_worker_id).await;
         }
 
         while let Some(command) = self.command_receiver.recv().await {
@@ -183,7 +184,7 @@ impl Scheduler {
                 Command::Enqueue(enqueue::Request { job }) => match job.status {
                     JobStatus::Assigned | JobStatus::Ready(_) => {
                         let executor = self.executor_manager.shortest();
-                        self.background_execute(job, executor).await;
+                        self.enqueue_execute(job, executor).await;
                         // println!("Enqueued job to Executor {:?}", executor.id);
                     }
                     JobStatus::Finished(_) => {
@@ -195,11 +196,11 @@ impl Scheduler {
                             continue;
                         }
 
-                        self.background_contract(&default_worker_id).await;
+                        self.back_contract(&default_worker_id).await;
                     }
                     JobStatus::Pending(_) => {
                         // println!("Job is pending");
-                        self.background_pend(job).await;
+                        self.enqueue_pend(job).await;
                     }
                     JobStatus::Cancelled => {
                         // println!("Job is cancelled");
@@ -209,7 +210,7 @@ impl Scheduler {
                             continue;
                         }
 
-                        self.background_contract(&default_worker_id).await;
+                        self.back_contract(&default_worker_id).await;
                     }
                     _ => unreachable!(),
                 },
@@ -220,31 +221,29 @@ impl Scheduler {
                         continue;
                     }
 
-                    self.background_contract(&default_worker_id).await;
+                    self.back_contract(&default_worker_id).await;
                 }
-                Command::Shutdown => {
-                    if !shutdown_flag {
-                        self.background_wait_shutdown().await;
-                        shutdown_flag = true;
-                    }
+                Command::ShutdownReq => {
+                    self.schedule_shutdown().await;
+                    shutdown_flag = true;
                 }
-            }
-
-            if shutdown_flag && self.task_counter.load(Ordering::Relaxed) == 0 {
-                break;
+                Command::ShutdownDone => break,
             }
         }
     }
 
+    /// deadline_policy
+    ///
+    ///
+    ///
+    ///
     async fn deadline_policy(&mut self) {
-        const JOB_DEADLINE: Duration = Duration::from_millis(500);
+        const JOB_DEADLINE: Duration = Duration::from_millis(100);
 
         let mut shutdown_flag = false;
         let default_worker_id = self.worker_id_manager.get_default();
 
-        for _ in 0..self.controllers.contractor.max_concurrency {
-            self.background_contract(&default_worker_id).await;
-        }
+        self.contract(JOB_DEADLINE, &default_worker_id).await;
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
@@ -252,58 +251,59 @@ impl Scheduler {
                     JobStatus::Assigned => {
                         self.contracting -= JOB_DEADLINE;
                         let executor = self.executor_manager.shortest();
-
-                        self.background_execute(job, executor).await;
+                        self.enqueue_execute(job, executor).await;
                     }
                     JobStatus::Ready(_) => {
+                        self.pending -= job.rem_time;
                         let executor = self.executor_manager.shortest();
-                        self.background_execute(job, executor).await;
+                        self.enqueue_execute(job, executor).await;
                     }
-                    JobStatus::Finished(_) => {
-                        self.controllers.updater.update_job(job).await;
-
-                        if shutdown_flag {
-                            continue;
-                        }
-
-                        self.background_contract(&default_worker_id).await;
+                    JobStatus::Finished(_) => self.controllers.updater.update_job(job).await,
+                    JobStatus::Pending(_) => {
+                        self.pending += job.rem_time;
+                        self.enqueue_pend(job).await;
                     }
-                    JobStatus::Pending(_) => self.background_pend(job).await,
-                    JobStatus::Cancelled => {
-                        self.controllers.updater.update_job(job).await;
-
-                        if shutdown_flag {
-                            continue;
-                        }
-
-                        self.background_contract(&default_worker_id).await;
-                    }
+                    JobStatus::Cancelled => self.controllers.updater.update_job(job).await,
                     _ => unreachable!(),
                 },
-                Command::NoJob => {
-                    self.contracting -= JOB_DEADLINE;
+                Command::NoJob => self.contracting -= JOB_DEADLINE,
 
-                    if shutdown_flag {
-                        continue;
-                    }
-
-                    self.background_contract(&default_worker_id).await;
+                Command::ShutdownReq => {
+                    shutdown_flag = true;
+                    self.schedule_shutdown().await;
                 }
-                Command::Shutdown => {
-                    if !shutdown_flag {
-                        self.background_wait_shutdown().await;
-                        shutdown_flag = true;
-                    }
-                }
+                Command::ShutdownDone => break,
             }
 
-            if shutdown_flag && self.task_counter.load(Ordering::Relaxed) == 0 {
-                break;
+            if shutdown_flag {
+                continue;
+            }
+
+            if self.contracting.is_zero() {
+                self.contract(JOB_DEADLINE, &default_worker_id).await;
             }
         }
     }
 
-    // pub async fn
+    async fn contract(&mut self, job_deadline: Duration, worker_id: &str) {
+        let deadline_sum = self.executor_manager.deadline_sum;
+        let queuing_time_sum = self.executor_manager.queuing_time_sum();
+        let pending = self.pending;
+        let contracting = self.contracting;
+
+        let capacity_sum = deadline_sum - (queuing_time_sum + pending + contracting);
+
+        let available_jobs = std::cmp::max(
+            capacity_sum.div_duration_f32(job_deadline) as usize,
+            self.controllers.contractor.max_concurrency,
+        );
+
+        println!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
+        for _ in 0..available_jobs {
+            self.contracting += job_deadline;
+            self.back_contract(worker_id).await;
+        }
+    }
 }
 
 /// Controller
@@ -334,8 +334,13 @@ impl Controller {
         self.command_sender.send(request).await.unwrap();
     }
 
-    pub async fn signal_shutdown(&self) {
-        let request = Command::Shutdown;
+    pub async fn signal_shutdown_req(&self) {
+        let request = Command::ShutdownReq;
+        self.command_sender.send(request).await.unwrap();
+    }
+
+    pub async fn signal_shutdown_done(&self) {
+        let request = Command::ShutdownDone;
         self.command_sender.send(request).await.unwrap();
     }
 
@@ -360,7 +365,8 @@ pub enum Command {
     NoJob,
     // Assigned(assigned::Request),
     // Pending(pending::Request),
-    Shutdown,
+    ShutdownReq,
+    ShutdownDone,
 }
 
 pub mod enqueue {

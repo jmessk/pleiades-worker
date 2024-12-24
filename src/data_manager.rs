@@ -65,7 +65,8 @@ impl DataManager {
                         Self::task_post_blob(fetcher_controller, request).await
                     }
                 }
-                let _ = permit;
+
+                drop(permit);
             });
         }
 

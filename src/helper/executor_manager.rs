@@ -9,10 +9,8 @@ pub struct ExecutorItem {
 
 #[derive(Default)]
 pub struct ExecutorManager {
-    // list: Vec<(executor::Controller, Duration)>,
     list: Vec<ExecutorItem>,
-    // pub contracting: Duration,
-    // pub pending: Duration,
+    pub deadline_sum: Duration,
 }
 
 impl ExecutorManager {
@@ -38,21 +36,27 @@ impl ExecutorManager {
         &item.controller
     }
 
-    // pub fn estimated_shortest(&self) -> &executor::Controller {
-    //     let item = self
-    //         .list
-    //         .iter()
-    //         .min_by_key(|item| item.controller.max_queueing_time() + item.contracting)
-    //         .unwrap();
+    pub fn capacity_sum(&self) -> Duration {
+        self.list
+            .iter()
+            .map(|item| {
+                let max_queuing_time = item.controller.max_queueing_time();
 
-    //     &item.controller
-    // }
+                if max_queuing_time < item.deadline {
+                    item.deadline - max_queuing_time
+                } else {
+                    Duration::from_secs(0)
+                }
+            })
+            .sum()
+    }
 
-    // pub fn update_queuing_time(&mut self) {
-    //     self.list
-    //         .iter_mut()
-    //         .for_each(|item| *item.ad = c.max_queueing_time());
-    // }
+    pub fn queuing_time_sum(&self) -> Duration {
+        self.list
+            .iter()
+            .map(|item| item.controller.max_queueing_time())
+            .sum()
+    }
 }
 
 #[derive(Default)]
@@ -76,6 +80,11 @@ impl ExecutorManagerBuilder {
             anyhow::bail!("ExecutorManagerBuilder: no executor controller is provided");
         }
 
-        Ok(ExecutorManager { list: self.list })
+        let deadline_sum = self.list.iter().map(|item| item.deadline).sum();
+
+        Ok(ExecutorManager {
+            list: self.list,
+            deadline_sum,
+        })
     }
 }

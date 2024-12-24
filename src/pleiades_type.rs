@@ -58,7 +58,7 @@ pub struct Job {
 
     /// remaining time that the job can consume
     ///
-    pub remaining_time: Duration,
+    pub rem_time: Duration,
 
     /// context of the job
     /// runtimes need to implement their own context
@@ -82,12 +82,12 @@ impl Job {
     /// set_remaining_time
     ///
     ///
-    pub fn sub_remaining_time(&mut self, duration: Duration) {
+    pub fn sub_rem_time(&mut self, duration: Duration) {
         // self.remaining_time -= duration;
-        if self.remaining_time > duration {
-            self.remaining_time -= duration;
+        if self.rem_time > duration {
+            self.rem_time -= duration;
         } else {
-            self.remaining_time = Duration::from_secs(0);
+            self.rem_time = Duration::from_secs(0);
         }
     }
 
@@ -95,7 +95,7 @@ impl Job {
     ///
     ///
     pub fn is_timeout(&self) -> bool {
-        self.remaining_time == Duration::from_secs(0)
+        self.rem_time == Duration::from_secs(0)
     }
 
     /// cancel

@@ -164,7 +164,7 @@ impl Executor {
             ..job
         };
 
-        let job_remaining_time = job.remaining_time;
+        let job_remaining_time = job.rem_time;
 
         // execution
         //
@@ -180,7 +180,7 @@ impl Executor {
             let elapsed = start.elapsed();
             tracing::debug!("Executor {}: job elapsed {:?}", self.id, elapsed);
 
-            job.sub_remaining_time(elapsed);
+            job.sub_rem_time(elapsed);
 
             job_status
         };
@@ -343,7 +343,7 @@ impl Controller {
             self.max_queueing_time
                 .lock()
                 .unwrap()
-                .add_assign(job.remaining_time);
+                .add_assign(job.rem_time);
         }
 
         let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
