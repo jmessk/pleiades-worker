@@ -1,13 +1,11 @@
 use std::{sync::Arc, time::Duration};
 
+use clap::Parser;
 use pleiades_worker::{
     executor::Executor, scheduler::Policy, Contractor, DataManager, ExecutorManager, Fetcher,
     PendingManager, Scheduler, Updater, WorkerIdManager,
 };
 use tokio::task::JoinSet;
-
-const NUM_CONTRACTORS: usize = 8;
-const NUM_EXECUTORS: usize = 4;
 
 #[tokio::main]
 async fn main() {
@@ -15,6 +13,18 @@ async fn main() {
     //
     dotenvy::dotenv().unwrap();
     let pleiades_url = std::env::var("PLEIADES_URL").unwrap();
+    //
+    // /////
+
+    // Load worker configuration
+    //
+    let args = Arg::parse();
+    let config = match args.config_path {
+        Some(path) => WorkerConfig::from_path(path),
+        None => WorkerConfig::default(),
+    };
+    // print with format
+    println!("config: {config:#?}");
     //
     // /////
 
@@ -37,7 +47,7 @@ async fn main() {
     let (mut contractor, contractor_controller) = Contractor::new(
         client.clone(),
         data_manager_controller.clone(),
-        NUM_CONTRACTORS,
+        config.num_contractors,
     );
     let (mut updater, updater_controller) =
         Updater::new(client.clone(), data_manager_controller.clone());
@@ -72,9 +82,9 @@ async fn main() {
     //
     let mut executor_manager_builder = ExecutorManager::builder();
 
-    for i in 0..NUM_EXECUTORS {
+    for i in 0..config.num_executors {
         let (mut executor, executor_controller) = Executor::new(i);
-        executor_manager_builder.insert(executor_controller, Duration::from_millis(300));
+        executor_manager_builder.insert(executor_controller, config.exec_deadline);
 
         join_set.spawn_blocking(move || executor.run());
     }
@@ -94,11 +104,58 @@ async fn main() {
     );
 
     join_set.spawn(async move {
-        scheduler.run(Policy::BlockingPipeline).await;
+        scheduler
+            .run(match config.policy.as_str() {
+                "fast_contract" => Policy::FastContract,
+                "blocking_pipeline" => Policy::BlockingPipeline(config.job_deadline),
+                "cooperative_pipeline" => Policy::CooperativePipeline(config.job_deadline),
+                _ => panic!("unknown policy"),
+            })
+            .await;
     });
 
     tokio::signal::ctrl_c().await.unwrap();
     scheduler_controller.signal_shutdown_req().await;
 
     join_set.join_all().await;
+}
+
+#[derive(Debug, clap::Parser)]
+struct Arg {
+    #[clap(long = "config")]
+    config_path: Option<String>,
+}
+
+use duration_str::deserialize_duration;
+
+#[derive(Debug, serde::Deserialize)]
+struct WorkerConfig {
+    num_contractors: usize,
+    num_executors: usize,
+    policy: String,
+    #[serde(deserialize_with = "deserialize_duration")]
+    exec_deadline: Duration,
+    #[serde(deserialize_with = "deserialize_duration")]
+    job_deadline: Duration,
+}
+
+impl Default for WorkerConfig {
+    fn default() -> Self {
+        Self {
+            num_contractors: 1,
+            num_executors: 1,
+            policy: "cooperative_pipeline".to_string(),
+            exec_deadline: Duration::from_millis(300),
+            job_deadline: Duration::from_millis(100),
+        }
+    }
+}
+
+impl WorkerConfig {
+    fn from_path<P: AsRef<std::path::Path>>(path: P) -> Self {
+        let file = std::fs::File::open(path).unwrap();
+        let reader = std::io::BufReader::new(file);
+
+        serde_yaml::from_reader(reader).unwrap()
+    }
 }

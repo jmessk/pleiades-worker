@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-const ITERATION: usize = 300;
+const ITERATION: usize = 100;
 const INTERVAL: Duration = Duration::from_millis(1);
 
 #[tokio::main]
@@ -110,15 +110,3 @@ async fn _get_job_metrics(
 
     metrics_list.join_all().await
 }
-
-// fn write_csv(metrics_list: Vec<serde_json::Value>) {
-//     let timestump = Local::now().format("%H:%M:%S").to_string();
-//     let file_name = format!("requester_{}.csv", timestump);
-//     let mut file = std::fs::File::create(file_name).unwrap();
-
-//     file.write_all(b"id,total,sched\n").unwrap();
-
-//     metrics_list.into_iter().for_each(|metrics| {
-
-//     });
-// }

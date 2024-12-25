@@ -23,8 +23,8 @@ struct Controllers {
 
 pub enum Policy {
     FastContract,
-    BlockingPipeline,
-    CooperativePipeline,
+    BlockingPipeline(Duration),
+    CooperativePipeline(Duration),
 }
 
 /// Scheduler
@@ -87,8 +87,10 @@ impl Scheduler {
 
         match policy {
             Policy::FastContract => self.fast_contract_policy().await,
-            Policy::BlockingPipeline => self.blocking_pipeline().await,
-            Policy::CooperativePipeline => self.cooperative_pipeline().await,
+            Policy::BlockingPipeline(job_deadline) => self.blocking_pipeline(job_deadline).await,
+            Policy::CooperativePipeline(job_deadline) => {
+                self.cooperative_pipeline(job_deadline).await
+            }
         }
 
         tracing::info!("shutdown");
@@ -275,19 +277,17 @@ impl Scheduler {
     ///
     ///
     ///
-    async fn blocking_pipeline(&mut self) {
-        const JOB_DEADLINE: Duration = Duration::from_millis(100);
-
+    async fn blocking_pipeline(&mut self, job_deadline: Duration) {
         let mut shutdown_flag = false;
         let default_worker_id = self.worker_id_manager.get_default();
 
-        self.contract(JOB_DEADLINE, &default_worker_id).await;
+        self.contract(job_deadline, &default_worker_id).await;
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Enqueue(enqueue::Request { job }) => match job.status {
                     JobStatus::Assigned => {
-                        self.sub_contracting(JOB_DEADLINE);
+                        self.sub_contracting(job_deadline);
                         let executor = self.executor_manager.shortest();
                         self.enqueue_execute(job, executor).await;
                     }
@@ -303,7 +303,7 @@ impl Scheduler {
                     JobStatus::Cancelled => self.controllers.updater.update_job(job).await,
                     _ => unreachable!(),
                 },
-                Command::NoJob => self.sub_contracting(JOB_DEADLINE),
+                Command::NoJob => self.sub_contracting(job_deadline),
                 Command::ShutdownReq => {
                     shutdown_flag = true;
                     self.schedule_shutdown().await;
@@ -316,7 +316,7 @@ impl Scheduler {
             }
 
             if self.contracting.is_zero() {
-                self.contract(JOB_DEADLINE, &default_worker_id).await;
+                self.contract(job_deadline, &default_worker_id).await;
             }
         }
     }
@@ -326,19 +326,17 @@ impl Scheduler {
     ///
     ///
     ///
-    async fn cooperative_pipeline(&mut self) {
-        const JOB_DEADLINE: Duration = Duration::from_millis(100);
-
+    async fn cooperative_pipeline(&mut self, job_deadline: Duration) {
         let mut shutdown_flag = false;
         let default_worker_id = self.worker_id_manager.get_default();
 
-        self.contract(JOB_DEADLINE, &default_worker_id).await;
+        self.contract(job_deadline, &default_worker_id).await;
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Enqueue(enqueue::Request { job }) => match job.status {
                     JobStatus::Assigned => {
-                        self.sub_contracting(JOB_DEADLINE);
+                        self.sub_contracting(job_deadline);
                         let executor = self.executor_manager.shortest();
                         self.enqueue_execute(job, executor).await;
                     }
@@ -355,7 +353,7 @@ impl Scheduler {
                     JobStatus::Cancelled => self.controllers.updater.update_job(job).await,
                     _ => unreachable!(),
                 },
-                Command::NoJob => self.sub_contracting(JOB_DEADLINE),
+                Command::NoJob => self.sub_contracting(job_deadline),
                 Command::ShutdownReq => {
                     shutdown_flag = true;
                     self.schedule_shutdown().await;
@@ -368,7 +366,7 @@ impl Scheduler {
             }
 
             if self.contracting.is_zero() {
-                self.contract(JOB_DEADLINE, &default_worker_id).await;
+                self.contract(job_deadline, &default_worker_id).await;
             }
         }
     }
