@@ -196,6 +196,22 @@ impl PendingManager {
                     let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
                     match runtime_request {
+                        RuntimeRequest::Sleep(duration) => {
+                            job.status = JobStatus::Resolving;
+
+                            tokio::spawn(async move {
+                                tokio::time::sleep(duration).await;
+                                job.status = JobStatus::Ready(RuntimeResponse::Sleep);
+
+                                request
+                                    .response_sender
+                                    .send(register::Response { job })
+                                    .unwrap();
+
+                                drop(permit);
+                                tracing::debug!("pend sleep done");
+                            });
+                        }
                         // blob
                         //
                         //
@@ -320,15 +336,9 @@ impl PendingManager {
     /// task_blob_get
     ///
     ///
-    async fn task_blob_get(
-        // scheduler_controller: scheduler::Controller,
-        handle: data_manager::get_blob::Handle,
-        job: &mut Job,
-    ) {
+    async fn task_blob_get(handle: data_manager::get_blob::Handle, job: &mut Job) {
         let response = handle.recv().await;
         job.status = JobStatus::Ready(RuntimeResponse::Blob(blob::Response::Get(response.blob)));
-
-        // scheduler_controller.enqueue(job).await;
     }
 
     /// task_blob_post
@@ -420,6 +430,10 @@ impl Controller {
             response_sender,
             job,
         });
+
+        if self.command_sender.capacity() == 0 {
+            tracing::warn!("command queue is full");
+        }
 
         self.command_sender.send(request).await.unwrap();
 

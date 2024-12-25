@@ -23,6 +23,7 @@ async fn main() {
     tracing_subscriber::fmt()
         // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=info"))
         .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
+        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=trace"))
         .init();
     //
     // /////
@@ -93,12 +94,7 @@ async fn main() {
     );
 
     join_set.spawn(async move {
-        scheduler
-            .run(
-                // Policy::CooperativePipeline,
-                Policy::BlockingPipeline,
-            )
-            .await;
+        scheduler.run(Policy::BlockingPipeline).await;
     });
 
     tokio::signal::ctrl_c().await.unwrap();

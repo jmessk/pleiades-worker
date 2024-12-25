@@ -157,6 +157,10 @@ impl Controller {
             blob_id,
         });
 
+        if self.command_sender.capacity() == 0 {
+            tracing::warn!("command queue is full");
+        }
+
         self.command_sender.send(request).await.unwrap();
 
         get_blob::Handle { response_receiver }
@@ -174,6 +178,10 @@ impl Controller {
             response_sender,
             data: data.into(),
         });
+
+        if self.command_sender.capacity() == 0 {
+            tracing::warn!("command queue is full");
+        }
 
         self.command_sender.send(request).await.unwrap();
 

@@ -4,7 +4,7 @@ async function fetch(input) {
     console.log("pend-sleep.js");
 
     let data = await blob.get("0");
-    sleep(1000);
+    await sleep(1000);
 
     console.log("got blob");
 

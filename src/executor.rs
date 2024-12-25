@@ -1,5 +1,5 @@
 use cpu_time::ThreadTime;
-use std::ops::{AddAssign, SubAssign};
+use std::ops::AddAssign;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -41,7 +41,7 @@ impl Executor {
     pub fn new(id: usize) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
-        let max_queueing_time = Arc::new(Mutex::new(Duration::from_secs(0)));
+        let max_queueing_time = Arc::new(Mutex::new(Duration::ZERO));
 
         let data_manager = Self {
             command_receiver,
@@ -127,7 +127,9 @@ impl Executor {
                     Err(e) => {
                         tracing::warn!("Executor {}: {}", self.id, e);
                         job.cancel();
-                        // scheduler_controller.enqueue_nowait(job);
+
+                        self.sub_queueing_time(job.rem_time);
+
                         request
                             .response_sender
                             .send(register::Response { job })
@@ -155,7 +157,7 @@ impl Executor {
             ..job
         };
 
-        let job_remaining_time = job.rem_time;
+        let temp_job_rem_time = job.rem_time;
 
         // execution
         //
@@ -176,13 +178,7 @@ impl Executor {
             job_status
         };
 
-        {
-            // update max_queueing_time
-            self.max_queueing_time
-                .lock()
-                .unwrap()
-                .sub_assign(job_remaining_time);
-        }
+        self.sub_queueing_time(temp_job_rem_time);
 
         let job = match job_status {
             JobStatus::Finished(_) => Job {
@@ -292,6 +288,11 @@ impl Executor {
         //     }
         // }
     }
+
+    fn sub_queueing_time(&self, duration: Duration) {
+        let mut max_queueing_time = self.max_queueing_time.lock().unwrap();
+        *max_queueing_time = max_queueing_time.checked_sub(duration).unwrap();
+    }
 }
 
 /// Api
@@ -329,7 +330,7 @@ impl Controller {
     //     self.command_sender.send(request).await.unwrap();
     // }
 
-    pub async fn register(&self, job: Job) -> register::Handle {
+    pub async fn enqueue(&self, job: Job) -> register::Handle {
         {
             self.max_queueing_time
                 .lock()
@@ -345,7 +346,6 @@ impl Controller {
         });
 
         self.command_sender.send(request).await.unwrap();
-        tracing::debug!("Executor {}: enqueued", self.id);
 
         register::Handle { response_receiver }
     }

@@ -199,7 +199,7 @@ impl Updater {
                     request.job.id,
                     request.job.lambda.runtime,
                     "Cancelled",
-                    Duration::ZERO,
+                    Duration::MAX,
                 )
             }
             _ => unreachable!(),
@@ -212,11 +212,13 @@ fn save_csv(metrics: Vec<(String, String, &'static str, Duration)>) {
     use std::fs::File;
     use std::io::prelude::*;
 
+    std::fs::create_dir_all("./metrics").unwrap();
+
     let file_name = format!(
         "metrics/{}.csv",
         chrono::Local::now().format("%Y_%m%d_%H%M%S")
     );
-    let mut file = File::create(file_name).unwrap();
+    let mut file = File::create(&file_name).unwrap();
 
     file.write_all(b"job_id,runtime,elapsed_ms\n").unwrap();
 
@@ -232,6 +234,8 @@ fn save_csv(metrics: Vec<(String, String, &'static str, Duration)>) {
             );
             file.write_all(line.as_bytes()).unwrap();
         });
+
+    tracing::info!("saved metrics to ./{}", file_name);
 }
 
 /// Api
@@ -249,11 +253,21 @@ impl Controller {
     ///
     pub async fn update_job(&self, job: Job) {
         let request = Command::FinishJob(update::Request { job });
+
+        if self.command_sender.capacity() == 0 {
+            tracing::warn!("command queue is full");
+        }
+
         self.command_sender.send(request).await.unwrap();
     }
 
     pub fn update_job_nowait(&self, job: Job) {
         let request = Command::FinishJob(update::Request { job });
+
+        if self.command_sender.capacity() == 0 {
+            tracing::warn!("command queue is full");
+        }
+
         self.command_sender.blocking_send(request).unwrap();
     }
 }

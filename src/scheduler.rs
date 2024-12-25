@@ -136,13 +136,16 @@ impl Scheduler {
     }
 
     async fn enqueue_execute(&self, job: Job, executor_controller: &executor::Controller) {
-        let handle = executor_controller.register(job).await;
+        let handle = executor_controller.enqueue(job).await;
         let scheduler_controller = self.controllers.scheduler.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
+
+        let id = executor_controller.id;
 
         tokio::spawn(async move {
             let response = handle.response_receiver.await.unwrap();
             scheduler_controller.enqueue(response.job).await;
+            tracing::debug!("enqueued job to executor {:?}", id);
 
             drop(permit);
         });
@@ -174,11 +177,27 @@ impl Scheduler {
             self.controllers.contractor.max_concurrency,
         );
 
-        println!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
+        tracing::debug!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
         for _ in 0..available_jobs {
-            self.contracting += job_deadline;
+            self.add_contracting(job_deadline);
             self.back_contract(worker_id).await;
         }
+    }
+
+    fn add_contracting(&mut self, duration: Duration) {
+        self.contracting += duration;
+    }
+
+    fn sub_contracting(&mut self, duration: Duration) {
+        self.contracting = self.contracting.checked_sub(duration).unwrap();
+    }
+
+    fn add_pending(&mut self, duration: Duration) {
+        self.pending += duration;
+    }
+
+    fn sub_pending(&mut self, duration: Duration) {
+        self.pending = self.pending.checked_sub(duration).unwrap();
     }
 }
 
@@ -268,7 +287,7 @@ impl Scheduler {
             match command {
                 Command::Enqueue(enqueue::Request { job }) => match job.status {
                     JobStatus::Assigned => {
-                        self.contracting -= JOB_DEADLINE;
+                        self.sub_contracting(JOB_DEADLINE);
                         let executor = self.executor_manager.shortest();
                         self.enqueue_execute(job, executor).await;
                     }
@@ -284,7 +303,7 @@ impl Scheduler {
                     JobStatus::Cancelled => self.controllers.updater.update_job(job).await,
                     _ => unreachable!(),
                 },
-                Command::NoJob => self.contracting -= JOB_DEADLINE,
+                Command::NoJob => self.sub_contracting(JOB_DEADLINE),
                 Command::ShutdownReq => {
                     shutdown_flag = true;
                     self.schedule_shutdown().await;
@@ -319,24 +338,24 @@ impl Scheduler {
             match command {
                 Command::Enqueue(enqueue::Request { job }) => match job.status {
                     JobStatus::Assigned => {
-                        self.contracting -= JOB_DEADLINE;
+                        self.sub_contracting(JOB_DEADLINE);
                         let executor = self.executor_manager.shortest();
                         self.enqueue_execute(job, executor).await;
                     }
                     JobStatus::Ready(_) => {
-                        self.pending -= job.rem_time;
+                        self.sub_pending(job.rem_time);
                         let executor = self.executor_manager.shortest();
                         self.enqueue_execute(job, executor).await;
                     }
                     JobStatus::Pending(_) => {
-                        self.pending += job.rem_time;
+                        self.add_pending(job.rem_time);
                         self.enqueue_pend(job).await;
                     }
                     JobStatus::Finished(_) => self.controllers.updater.update_job(job).await,
                     JobStatus::Cancelled => self.controllers.updater.update_job(job).await,
                     _ => unreachable!(),
                 },
-                Command::NoJob => self.contracting -= JOB_DEADLINE,
+                Command::NoJob => self.sub_contracting(JOB_DEADLINE),
                 Command::ShutdownReq => {
                     shutdown_flag = true;
                     self.schedule_shutdown().await;

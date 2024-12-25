@@ -84,19 +84,17 @@ impl Job {
     ///
     ///
     pub fn sub_rem_time(&mut self, duration: Duration) {
-        // self.remaining_time -= duration;
-        if self.rem_time > duration {
-            self.rem_time -= duration;
-        } else {
-            self.rem_time = Duration::from_secs(0);
-        }
+        self.rem_time = self
+            .rem_time
+            .checked_sub(duration)
+            .unwrap_or(Duration::ZERO);
     }
 
     /// is_timeout
     ///
     ///
     pub fn is_timeout(&self) -> bool {
-        self.rem_time == Duration::from_secs(0)
+        self.rem_time == Duration::ZERO
     }
 
     /// cancel

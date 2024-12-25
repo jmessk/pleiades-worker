@@ -31,7 +31,6 @@ impl Class for Blob {
 
     fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
         class
-            // .method(js_string!("get"), 1, NativeFunction::from_fn_ptr(Self::get))
             .method(js_string!("get"), 1, NativeFunction::from_fn_ptr(Self::get));
 
         Ok(())
@@ -60,8 +59,8 @@ impl Blob {
 
             let result = match response {
                 Some(RuntimeResponse::Blob(blob::Response::Get(Some(blob)))) => {
+                    tracing::trace!("response found: size: {:?} Bytes", blob.data.len());
                     let array = JsUint8Array::from_iter(blob.data, context)?;
-                    tracing::trace!("response found: {:?}", array);
 
                     JsValue::from(array)
                 }

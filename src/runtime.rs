@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Duration};
 
 use crate::pleiades_type::{Blob, JobStatus, Lambda};
 
@@ -37,6 +37,7 @@ pub enum RuntimeContext {
 ///
 #[derive(Debug, PartialEq, Eq)]
 pub enum RuntimeRequest {
+    Sleep(Duration),
     Gpu(gpu::Request),
     Blob(blob::Request),
     Http(http::Request),
@@ -49,6 +50,7 @@ pub enum RuntimeRequest {
 ///
 #[derive(Debug, PartialEq, Eq)]
 pub enum RuntimeResponse {
+    Sleep,
     Gpu(gpu::Response),
     Blob(blob::Response),
     Http(http::Response),

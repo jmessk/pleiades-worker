@@ -1,7 +1,7 @@
 async function fetch(input) {
     console.log("sleep.js");
 
-    sleep(1000);
+    await sleep(500);
 
     return "test_output";
 }
