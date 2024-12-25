@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-const ITERATION: usize = 10;
+const ITERATION: usize = 100;
 const INTERVAL: Duration = Duration::from_millis(1);
 
 #[tokio::main]
@@ -17,13 +17,13 @@ async fn main() {
     // let script = include_bytes!("./script/hello.js");
     // let script = include_bytes!("./script/sleep.js");
     // let script = include_bytes!("./script/counter.js");
-    // let script = include_bytes!("./script/counter-sleep.js");
+    let script = include_bytes!("./script/counter-sleep.js");
     // let script = include_bytes!("./script/pend-sleep.js");
     // let script = include_bytes!("./script/encoder-decoder.js");
     // let script = include_bytes!("./script/blob-get.js");
     // let script = include_bytes!("./script/blob-get-10.js");
     // let script = include_bytes!("./script/http-get.js");
-    let script = include_bytes!("./script/http-post.js");
+    // let script = include_bytes!("./script/http-post.js");
 
     let lambda_blob = client.blob().new(script.as_ref()).await.unwrap();
     let lambda = lambda_blob.into_lambda("pleiades+example").await.unwrap();

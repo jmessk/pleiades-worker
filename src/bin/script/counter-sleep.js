@@ -4,14 +4,14 @@ async function fetch(input) {
     console.log("counter-sleep.js");
 
 
-    await sleep(200);
+    await sleep(100);
 
     let counter = 0;
-    for (let i = 0; i < 10000; i++) {
+    for (let i = 0; i < 100000; i++) {
         counter++;
     }
 
-    await sleep(200);
+    await sleep(100);
 
     return counter;
 }
