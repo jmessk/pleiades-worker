@@ -1,8 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use pleiades_worker::{
-    executor::Executor, Contractor, DataManager, ExecutorManager, Fetcher, PendingManager,
-    Scheduler, Updater, WorkerIdManager,
+    executor::Executor, scheduler::Policy, Contractor, DataManager, ExecutorManager, Fetcher,
+    PendingManager, Scheduler, Updater, WorkerIdManager,
 };
 use tokio::task::JoinSet;
 
@@ -93,7 +93,12 @@ async fn main() {
     );
 
     join_set.spawn(async move {
-        scheduler.run().await;
+        scheduler
+            .run(
+                // Policy::CooperativePipeline,
+                Policy::BlockingPipeline,
+            )
+            .await;
     });
 
     tokio::signal::ctrl_c().await.unwrap();

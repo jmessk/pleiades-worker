@@ -106,6 +106,10 @@ impl Job {
         self.status = JobStatus::Cancelled;
         tracing::warn!("Job {} is cancelled", self.id);
     }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.status == JobStatus::Cancelled
+    }
 }
 
 /// JobStatus

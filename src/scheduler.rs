@@ -87,7 +87,7 @@ impl Scheduler {
 
         match policy {
             Policy::FastContract => self.fast_contract_policy().await,
-            Policy::BlockingPipeline => self.fast_contract_policy().await,
+            Policy::BlockingPipeline => self.blocking_pipeline().await,
             Policy::CooperativePipeline => self.cooperative_pipeline().await,
         }
 
@@ -160,6 +160,26 @@ impl Scheduler {
             drop(permit);
         });
     }
+
+    async fn contract(&mut self, job_deadline: Duration, worker_id: &str) {
+        let deadline_sum = self.executor_manager.deadline_sum;
+        let queuing_time_sum = self.executor_manager.queuing_time_sum();
+        let pending = self.pending;
+        let contracting = self.contracting;
+
+        let capacity_sum = deadline_sum - (queuing_time_sum + pending + contracting);
+
+        let available_jobs = std::cmp::min(
+            capacity_sum.div_duration_f32(job_deadline) as usize,
+            self.controllers.contractor.max_concurrency,
+        );
+
+        println!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
+        for _ in 0..available_jobs {
+            self.contracting += job_deadline;
+            self.back_contract(worker_id).await;
+        }
+    }
 }
 
 impl Scheduler {
@@ -231,7 +251,58 @@ impl Scheduler {
         }
     }
 
-    /// deadline_policy
+    /// blocking_pipeline
+    ///
+    ///
+    ///
+    ///
+    async fn blocking_pipeline(&mut self) {
+        const JOB_DEADLINE: Duration = Duration::from_millis(100);
+
+        let mut shutdown_flag = false;
+        let default_worker_id = self.worker_id_manager.get_default();
+
+        self.contract(JOB_DEADLINE, &default_worker_id).await;
+
+        while let Some(command) = self.command_receiver.recv().await {
+            match command {
+                Command::Enqueue(enqueue::Request { job }) => match job.status {
+                    JobStatus::Assigned => {
+                        self.contracting -= JOB_DEADLINE;
+                        let executor = self.executor_manager.shortest();
+                        self.enqueue_execute(job, executor).await;
+                    }
+                    JobStatus::Ready(_) => {}
+                    JobStatus::Pending(_) => {
+                        let handle = self.controllers.pending.register(job).await;
+                        let job = handle.response_receiver.await.unwrap().job;
+
+                        let executor_controller = self.executor_manager.shortest();
+                        self.enqueue_execute(job, executor_controller).await;
+                    }
+                    JobStatus::Finished(_) => self.controllers.updater.update_job(job).await,
+                    JobStatus::Cancelled => self.controllers.updater.update_job(job).await,
+                    _ => unreachable!(),
+                },
+                Command::NoJob => self.contracting -= JOB_DEADLINE,
+                Command::ShutdownReq => {
+                    shutdown_flag = true;
+                    self.schedule_shutdown().await;
+                }
+                Command::ShutdownDone => break,
+            }
+
+            if shutdown_flag {
+                continue;
+            }
+
+            if self.contracting.is_zero() {
+                self.contract(JOB_DEADLINE, &default_worker_id).await;
+            }
+        }
+    }
+
+    /// cooperative_pipeline
     ///
     ///
     ///
@@ -257,16 +328,15 @@ impl Scheduler {
                         let executor = self.executor_manager.shortest();
                         self.enqueue_execute(job, executor).await;
                     }
-                    JobStatus::Finished(_) => self.controllers.updater.update_job(job).await,
                     JobStatus::Pending(_) => {
                         self.pending += job.rem_time;
                         self.enqueue_pend(job).await;
                     }
+                    JobStatus::Finished(_) => self.controllers.updater.update_job(job).await,
                     JobStatus::Cancelled => self.controllers.updater.update_job(job).await,
                     _ => unreachable!(),
                 },
                 Command::NoJob => self.contracting -= JOB_DEADLINE,
-
                 Command::ShutdownReq => {
                     shutdown_flag = true;
                     self.schedule_shutdown().await;
@@ -281,26 +351,6 @@ impl Scheduler {
             if self.contracting.is_zero() {
                 self.contract(JOB_DEADLINE, &default_worker_id).await;
             }
-        }
-    }
-
-    async fn contract(&mut self, job_deadline: Duration, worker_id: &str) {
-        let deadline_sum = self.executor_manager.deadline_sum;
-        let queuing_time_sum = self.executor_manager.queuing_time_sum();
-        let pending = self.pending;
-        let contracting = self.contracting;
-
-        let capacity_sum = deadline_sum - (queuing_time_sum + pending + contracting);
-
-        let available_jobs = std::cmp::min(
-            capacity_sum.div_duration_f32(job_deadline) as usize,
-            self.controllers.contractor.max_concurrency,
-        );
-
-        println!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
-        for _ in 0..available_jobs {
-            self.contracting += job_deadline;
-            self.back_contract(worker_id).await;
         }
     }
 }
