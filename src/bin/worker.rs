@@ -7,7 +7,8 @@ use pleiades_worker::{
 };
 use tokio::task::JoinSet;
 
-#[tokio::main]
+// #[tokio::main(flavor = "current_thread")]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     // Load .env file
     //

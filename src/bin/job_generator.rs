@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-const ITERATION: usize = 100;
-const INTERVAL: Duration = Duration::from_millis(1);
+const ITERATION: usize = 200;
+const INTERVAL: Duration = Duration::from_millis(20);
 
 #[tokio::main]
 async fn main() {
@@ -16,8 +16,8 @@ async fn main() {
 
     // let script = include_bytes!("./script/hello.js");
     // let script = include_bytes!("./script/sleep.js");
-    // let script = include_bytes!("./script/counter.js");
-    let script = include_bytes!("./script/counter-sleep.js");
+    let script = include_bytes!("./script/counter.js");
+    // let script = include_bytes!("./script/counter-sleep.js");
     // let script = include_bytes!("./script/pend-sleep.js");
     // let script = include_bytes!("./script/encoder-decoder.js");
     // let script = include_bytes!("./script/blob-get.js");
