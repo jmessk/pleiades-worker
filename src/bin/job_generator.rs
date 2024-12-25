@@ -16,10 +16,12 @@ async fn main() {
 
     // let script = include_bytes!("./script/hello.js");
     // let script = include_bytes!("./script/counter.js");
+    let script = include_bytes!("./script/counter-pend.js");
     // let script = include_bytes!("./script/sleep.js");
     // let script = include_bytes!("./script/get-blob.js");
-    let script = include_bytes!("./script/get-blob-10.js");
+    // let script = include_bytes!("./script/get-blob-10.js");
     // let script = include_bytes!("./script/pend-sleep.js");
+    // let script = include_bytes!("./script/encoder-decoder.js");
 
     let lambda_blob = client.blob().new(script.as_ref()).await.unwrap();
     let lambda = lambda_blob.into_lambda("pleiades+example").await.unwrap();

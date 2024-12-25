@@ -50,14 +50,6 @@ impl Updater {
         (updater, controller)
     }
 
-    /// api
-    ///
-    // pub fn api(&self) -> Api {
-    //     Api {
-    //         command_sender: self.command_sender.clone(),
-    //     }
-    // }
-
     /// run
     ///
     pub async fn run(&mut self) {

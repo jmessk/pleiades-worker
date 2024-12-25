@@ -22,15 +22,6 @@ pub struct Executor {
     ///
     id: usize,
 
-    /// updater
-    ///
-    // updater_controller: updater::Controller,
-    // scheduler_controller: Option<scheduler::Controller>,
-
-    /// pending_manager
-    ///
-    // pending_manager_controller: Option<pending_manager::Controller>,
-
     /// max_queueing_time
     ///
     max_queueing_time: Arc<Mutex<Duration>>,
@@ -68,9 +59,9 @@ impl Executor {
         (data_manager, controller)
     }
 
-    /// set_controller
-    ///
-    ///
+    // / set_controller
+    // /
+    // /
     // pub fn set_controller(
     //     &mut self,
     //     scheduler_controller: scheduler::Controller,

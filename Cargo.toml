@@ -5,9 +5,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.94"
-boa_engine = "0.19"
-boa_gc = "0.19.1"
-boa_runtime = "0.19.1"
+boa_engine = "0.20"
+boa_gc = "0.20"
+boa_runtime = "0.20"
 bytes = "1.8"
 pleiades-api = { git = "https://git.dolylab.cc/mec/pleiades-rs.git", branch = "dev" }
 pleiades = { git = "https://git.dolylab.cc/mec/pleiades-rs.git", branch = "dev" }

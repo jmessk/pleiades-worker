@@ -21,6 +21,12 @@ struct Controllers {
     pending: pending_manager::Controller,
 }
 
+pub enum Policy {
+    FastContract,
+    BlockingPipeline,
+    CooperativePipeline,
+}
+
 /// Scheduler
 ///
 ///
@@ -76,11 +82,14 @@ impl Scheduler {
     /// run
     ///
     ///
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self, policy: Policy) {
         tracing::info!("running");
 
-        // self.fast_contract_policy().await;
-        self.deadline_policy().await;
+        match policy {
+            Policy::FastContract => self.fast_contract_policy().await,
+            Policy::BlockingPipeline => self.fast_contract_policy().await,
+            Policy::CooperativePipeline => self.cooperative_pipeline().await,
+        }
 
         tracing::info!("shutdown");
     }
@@ -152,13 +161,14 @@ impl Scheduler {
         });
     }
 }
+
 impl Scheduler {
     /// fast_contract_policy
     ///
     ///
     ///
     ///
-    async fn _fast_contract_policy(&mut self) {
+    async fn fast_contract_policy(&mut self) {
         let mut shutdown_flag = false;
 
         let default_worker_id = self.worker_id_manager.get_default();
@@ -226,7 +236,7 @@ impl Scheduler {
     ///
     ///
     ///
-    async fn deadline_policy(&mut self) {
+    async fn cooperative_pipeline(&mut self) {
         const JOB_DEADLINE: Duration = Duration::from_millis(100);
 
         let mut shutdown_flag = false;

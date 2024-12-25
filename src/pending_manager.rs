@@ -19,10 +19,6 @@ pub struct PendingManager {
     max_concurrency: usize,
     semaphore: Arc<Semaphore>,
 
-    /// scheduler_controller
-    ///
-    // scheduler_controller: Option<scheduler::Controller>,
-
     /// data_manager_controller
     ///
     data_manager_controller: data_manager::Controller,
@@ -218,7 +214,7 @@ impl PendingManager {
                                     .unwrap();
 
                                 drop(permit);
-        
+
                                 tracing::debug!("pend blob get done");
                             });
                         }
@@ -235,7 +231,7 @@ impl PendingManager {
                                     .unwrap();
 
                                 drop(permit);
-        
+
                                 tracing::debug!("pend blob post done");
                             });
                         }
@@ -251,7 +247,7 @@ impl PendingManager {
 
                             tokio::spawn(async move {
                                 drop(permit);
-        
+
                                 tracing::debug!("pend gpu done");
                             });
                         }
@@ -276,7 +272,7 @@ impl PendingManager {
                                     .unwrap();
 
                                 drop(permit);
-        
+
                                 tracing::debug!("pend http get done");
                             });
                         }
@@ -293,7 +289,7 @@ impl PendingManager {
                                     .unwrap();
 
                                 drop(permit);
-        
+
                                 tracing::debug!("pend http post done");
                             });
                         } //
@@ -415,26 +411,6 @@ pub struct Controller {
 
 impl Controller {
     /// register
-    ///
-    ///
-    ///
-    ///
-    // pub async fn enqueue(&self, job: Job) {
-    //     let request = Command::Enqueue(enqueue::Request { job });
-    //     self.command_sender.send(request).await.unwrap();
-    // }
-
-    /// register_nowait
-    ///
-    ///
-    ///
-    ///
-    // pub fn enqueue_nowait(&self, job: Job) {
-    //     let request = Command::Enqueue(enqueue::Request { job });
-    //     self.command_sender.blocking_send(request).unwrap();
-    // }
-
-    /// register_handle
     ///
     ///
     pub async fn register(&self, job: Job) -> register::Handle {

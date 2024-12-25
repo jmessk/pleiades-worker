@@ -1,6 +1,6 @@
 use boa_engine::property::Attribute;
 use boa_engine::{js_string, Context, JsResult, Module, NativeFunction, Source};
-use boa_runtime::Console;
+use boa_runtime::{Console, TextDecoder, TextEncoder};
 use bytes::Bytes;
 use std::rc::Rc;
 
@@ -29,7 +29,9 @@ impl runtime::Context for JsContext {
         Self::register_builtin_functions(&mut context);
         Self::register_builtin_modules(&mut context);
 
-        Self { context: Box::new(context) }
+        Self {
+            context: Box::new(context),
+        }
     }
 }
 
@@ -53,6 +55,9 @@ impl JsContext {
 
     fn register_builtin_classes(context: &mut Context) {
         use super::class;
+
+        TextDecoder::register(context).unwrap();
+        TextEncoder::register(context).unwrap();
 
         context.register_global_class::<class::Blob>().unwrap();
         context.register_global_class::<class::Nn>().unwrap();
@@ -111,7 +116,7 @@ impl JsContext {
     ///
     /// async function fetch(job) {
     ///     const inputData = await blob.get(job.input.id);
-    ///  
+    ///
     ///    return "output";
     /// }
     ///
@@ -142,8 +147,8 @@ impl JsContext {
         let entry_point = r#"
             import fetch from "user";
 
-            let job = getUserInput();
-            setUserOutput(await fetch(job));
+            let input = getUserInput();
+            setUserOutput(await fetch(input));
         "#;
 
         let source = Source::from_bytes(entry_point);
@@ -158,7 +163,6 @@ impl JsContext {
     }
 
     pub fn set_response(&mut self, response: RuntimeResponse) {
-        // RuntimeRequest::get_and_remove_from_context(self.context.realm());
         response.insert(self.context.realm());
     }
 
