@@ -41,9 +41,9 @@ pub fn set_user_output(
             //     .unwrap()
             //     .to_std_string_escaped();
             let data = data_js_obj.to_object(context)?;
-            let data: Vec<u8> = JsUint8Array::from_object(data)?.iter(context).collect();
+            let data: Bytes = JsUint8Array::from_object(data)?.iter(context).collect();
 
-            Some(Bytes::from(data))
+            Some(data)
         }
     };
 
