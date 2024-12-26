@@ -38,7 +38,6 @@ async fn main() {
         let input = input.clone();
 
         job_list.spawn(async move {
-            println!("start job: {}", i);
             let _job = lambda.invoke(input, None).await.unwrap();
             // let _output = job.wait_finished(std::time::Duration::from_secs(10)).await;
         });
@@ -47,6 +46,8 @@ async fn main() {
     }
 
     let _job_list = job_list.join_all().await;
+
+    println!("All jobs are finished");
 }
 
 async fn _get_job_metrics(

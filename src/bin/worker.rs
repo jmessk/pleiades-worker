@@ -33,8 +33,9 @@ async fn main() {
     //
     tracing_subscriber::fmt()
         // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=info"))
-        .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
+        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
         // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=trace"))
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     //
     // /////
@@ -125,6 +126,9 @@ async fn main() {
 struct Arg {
     #[clap(long = "config")]
     config_path: Option<String>,
+
+    #[clap(long = "log")]
+    log_level: Option<String>,
 }
 
 use duration_str::deserialize_duration;

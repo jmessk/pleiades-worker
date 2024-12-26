@@ -2,6 +2,16 @@
 
 ## Config
 
+### Job Generator
+
+- options
+  - `--script`: path to the script file
+  - `--iteration`: number of iterations. default: 10
+
+```bash
+cargo run --release --example job_generator -- --script ./examples/script/hello.js --iteration 100
+```
+
 ### Worker
 
 ```yml
@@ -17,14 +27,4 @@ job_deadline: 100ms
 
 ```bash
 cargo run --release --bin worker -- --config ./config/cooperative.yml
-```
-
-### Job Generator
-
-- options
-  - `--script`: path to the script file
-  - `--iteration`: number of iterations. default: 10
-
-```bash
-cargo run --release --example job_generator -- --script ./examples/script/hello.js --iteration 100
 ```
