@@ -126,9 +126,6 @@ async fn main() {
 struct Arg {
     #[clap(long = "config")]
     config_path: Option<String>,
-
-    #[clap(long = "log")]
-    log_level: Option<String>,
 }
 
 use duration_str::deserialize_duration;

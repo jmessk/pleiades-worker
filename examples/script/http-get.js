@@ -1,5 +1,5 @@
 async function fetch(input) {
-    console.log("http-get.js");
+    // console.log("http-get.js");
     
     let client = new HttpClient();
     let response = await client.get("https://example.com");

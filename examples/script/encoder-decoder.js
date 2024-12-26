@@ -1,7 +1,5 @@
-import { blob } from "pleiades"
-
 async function fetch(input) {
-    console.log("encoder-decoder.js");
+    // console.log("encoder-decoder.js");
 
     let decoded_input = new TextDecoder().decode(input);
     console.log(decoded_input);

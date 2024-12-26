@@ -1,5 +1,5 @@
 async function fetch(input) {
-    console.log("http-post.js");
+    // console.log("http-post.js");
 
     let post_data = new TextEncoder().encode("example_data");
 

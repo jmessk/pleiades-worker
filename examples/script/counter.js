@@ -1,5 +1,5 @@
 async function fetch(input) {
-    console.log("counter.js");
+    // console.log("counter.js");
 
     let counter = 0;
 

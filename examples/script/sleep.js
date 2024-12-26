@@ -1,5 +1,5 @@
 async function fetch(input) {
-    console.log("sleep.js");
+    // console.log("sleep.js");
 
     await sleep(500);
 

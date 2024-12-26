@@ -1,7 +1,4 @@
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
@@ -95,6 +92,7 @@ impl Updater {
         // edit
         let metrics = join_set.join_all().await;
         let overall = first_instant.unwrap().elapsed();
+        println!("overall: {:?}", overall);
         save_csv(overall, metrics);
     }
 

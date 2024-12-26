@@ -33,7 +33,7 @@ async fn main() {
     let mut job_list = tokio::task::JoinSet::new();
     let mut ticker = tokio::time::interval(INTERVAL);
 
-    for i in 0..args.iteration {
+    for _i in 0..args.iteration {
         let lambda = lambda.clone();
         let input = input.clone();
 
