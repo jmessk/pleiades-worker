@@ -47,7 +47,7 @@ async fn main() {
 
     let _job_list = job_list.join_all().await;
 
-    println!("All jobs are finished");
+    println!("All jobs are generated");
 }
 
 async fn _get_job_metrics(

@@ -1,5 +1,3 @@
-import { blob } from "pleiades";
-
 async function fetch(input) {
     // console.log("counter-sleep.js");
 

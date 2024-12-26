@@ -1,5 +1,5 @@
 num_contractors: 8
-num_executors: 3
+num_executors: 4
 policy: cooperative_pipeline
 exec_deadline: 400ms
 job_deadline: 100ms
