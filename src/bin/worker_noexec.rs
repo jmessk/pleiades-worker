@@ -32,8 +32,12 @@ async fn main() {
 
     let (mut fetcher, fetcher_controller) = Fetcher::new(client.clone());
     let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_controller);
-    let (mut contractor, contractor_controller) =
-        Contractor::new(client.clone(), data_manager_controller.clone(), 8);
+    let (mut contractor, contractor_controller) = Contractor::new(
+        client.clone(),
+        data_manager_controller.clone(),
+        8,
+        Duration::from_millis(100),
+    );
     let (mut updater, updater_controller) = Updater::new(client.clone(), data_manager_controller);
 
     let fetcher = tokio::spawn(async move {

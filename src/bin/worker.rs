@@ -50,6 +50,7 @@ async fn main() {
         client.clone(),
         data_manager_controller.clone(),
         config.num_contractors,
+        config.job_deadline,
     );
     let (mut updater, updater_controller) =
         Updater::new(client.clone(), data_manager_controller.clone());

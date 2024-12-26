@@ -62,8 +62,8 @@ impl Scheduler {
 
         let scheduler = Self {
             command_receiver,
-            max_concurrency: 256,
-            semaphore: Arc::new(Semaphore::new(256)),
+            max_concurrency: 512,
+            semaphore: Arc::new(Semaphore::new(512)),
             contracting: Duration::default(),
             pending: Duration::default(),
             controllers: Controllers {

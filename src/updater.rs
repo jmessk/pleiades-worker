@@ -425,7 +425,7 @@ mod tests {
         let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
         let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_api);
         let (mut contractor, api) =
-            Contractor::new(client.clone(), data_manager_controller.clone(), 16);
+            Contractor::new(client.clone(), data_manager_controller.clone(), 16, Duration::from_millis(100));
         let (mut updater, _updater_api) = Updater::new(client.clone(), data_manager_controller);
 
         tokio::spawn(async move {

@@ -9,8 +9,6 @@ use crate::{
     pleiades_type::{Job, JobStatus, Lambda},
 };
 
-const MAX_RUNNABLE: Duration = Duration::from_millis(100);
-
 /// Contractor
 ///
 ///
@@ -31,6 +29,8 @@ pub struct Contractor {
     ///
     max_concurrency: usize,
     semaphore: Arc<Semaphore>,
+
+    job_deadline: Duration,
 }
 
 impl Contractor {
@@ -40,6 +40,7 @@ impl Contractor {
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
         max_concurrency: usize,
+        job_deadline: Duration,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(8);
 
@@ -49,6 +50,7 @@ impl Contractor {
             command_receiver,
             max_concurrency,
             semaphore: Arc::new(Semaphore::new(max_concurrency)),
+            job_deadline,
         };
 
         let controller = Controller {
@@ -72,6 +74,7 @@ impl Contractor {
         while let Some(command) = self.command_receiver.recv().await {
             let client = self.client.clone();
             let data_manager_controller = self.data_manager_controller.clone();
+            let job_deadline = self.job_deadline;
 
             if self.semaphore.available_permits() == 0 {
                 tracing::warn!("Contractor is busy");
@@ -82,7 +85,7 @@ impl Contractor {
             tokio::spawn(async move {
                 match command {
                     Command::Contract(request) => {
-                        Self::task_contract(client, data_manager_controller, request).await
+                        Self::task_contract(client, data_manager_controller, request, job_deadline).await
                     }
                 }
 
@@ -116,6 +119,7 @@ impl Contractor {
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
         request: contract::Request,
+        job_deadline: Duration,
     ) {
         tracing::debug!("contracting: worker_id={}", request.worker_id);
         // Fetch a new job
@@ -191,7 +195,7 @@ impl Contractor {
         let job = Job {
             id: job_id,
             status: JobStatus::Assigned,
-            rem_time: MAX_RUNNABLE,
+            rem_time: job_deadline,
             context: None,
             lambda: Box::new(Lambda {
                 id: job_info.lambda.lambda_id,
@@ -393,7 +397,7 @@ mod tests {
         let (mut _data_manager, data_manager_controller) =
             data_manager::DataManager::new(fetcher_api);
         let (mut contractor, contractor_api) =
-            Contractor::new(client.clone(), data_manager_controller, 16);
+            Contractor::new(client.clone(), data_manager_controller, 16, Duration::from_millis(100));
 
         tokio::spawn(async move {
             contractor.run().await;

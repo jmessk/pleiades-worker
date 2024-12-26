@@ -1,16 +1,13 @@
 async function fetch(input) {
     // console.log("counter-sleep.js");
 
-    await sleep(100);
+    await sleep(50);
 
     let counter = 0;
-    for (let i = 0; i < 100000; i++) {
+    for (let i = 0; i < 1000000; i++) {
         counter++;
     }
 
-    await sleep(100);
-
-    return counter;
 }
 
 export default fetch;
