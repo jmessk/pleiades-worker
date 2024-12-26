@@ -91,7 +91,10 @@ impl Updater {
 
         // edit
         let metrics = join_set.join_all().await;
-        let overall = first_instant.unwrap().elapsed();
+        let overall = match first_instant {
+            Some(instant) => instant.elapsed(),
+            None => Duration::ZERO,
+        };
         println!("overall: {:?}", overall);
         save_csv(overall, metrics);
     }
