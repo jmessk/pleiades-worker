@@ -82,7 +82,7 @@ async fn _get_job_metrics(
 struct Arg {
     #[clap(long = "script")]
     script_path: String,
-    
+
     #[clap(long = "iteration", default_value = "10")]
     iteration: usize,
 }

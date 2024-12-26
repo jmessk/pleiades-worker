@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
@@ -57,6 +60,7 @@ impl Updater {
 
         // edit
         let mut join_set = tokio::task::JoinSet::new();
+        let mut first_instant = None;
 
         while let Some(command) = self.command_receiver.recv().await {
             tracing::trace!("updating job");
@@ -68,7 +72,11 @@ impl Updater {
 
             // new task
             match command {
-                Command::FinishJob(request) => {
+                Command::Update(request) => {
+                    if first_instant.is_none() {
+                        first_instant = Some(request.job.instant);
+                    }
+
                     // tokio::spawn(async move {
                     join_set.spawn(async move {
                         // Self::task_update_job(client, data_manager_controller, request).await
@@ -86,7 +94,8 @@ impl Updater {
 
         // edit
         let metrics = join_set.join_all().await;
-        save_csv(metrics);
+        let overall = first_instant.unwrap().elapsed();
+        save_csv(overall, metrics);
     }
 
     async fn wait_for_shutdown(&self) {
@@ -182,6 +191,8 @@ impl Updater {
                 )
             }
             JobStatus::Cancelled => {
+                let elapsed = request.job.instant.elapsed();
+
                 let update_request = pleiades_api::api::job::update::Request::builder()
                     .job_id(&request.job.id)
                     .data_id("0")
@@ -199,7 +210,7 @@ impl Updater {
                     request.job.id,
                     request.job.lambda.runtime,
                     "Cancelled",
-                    Duration::MAX,
+                    elapsed,
                 )
             }
             _ => unreachable!(),
@@ -207,7 +218,7 @@ impl Updater {
     }
 }
 
-fn save_csv(metrics: Vec<(String, String, &'static str, Duration)>) {
+fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Duration)>) {
     use chrono;
     use std::fs::File;
     use std::io::prelude::*;
@@ -220,6 +231,8 @@ fn save_csv(metrics: Vec<(String, String, &'static str, Duration)>) {
     );
     let mut file = File::create(&file_name).unwrap();
 
+    file.write_all(format!("overall: {}\n", elapsed.as_millis()).as_bytes())
+        .unwrap();
     file.write_all(b"job_id,runtime,elapsed_ms\n").unwrap();
 
     metrics
@@ -252,7 +265,7 @@ impl Controller {
     /// get_blob
     ///
     pub async fn update_job(&self, job: Job) {
-        let request = Command::FinishJob(update::Request { job });
+        let request = Command::Update(update::Request { job });
 
         if self.command_sender.capacity() == 0 {
             tracing::warn!("command queue is full");
@@ -262,7 +275,7 @@ impl Controller {
     }
 
     pub fn update_job_nowait(&self, job: Job) {
-        let request = Command::FinishJob(update::Request { job });
+        let request = Command::Update(update::Request { job });
 
         if self.command_sender.capacity() == 0 {
             tracing::warn!("command queue is full");
@@ -273,7 +286,7 @@ impl Controller {
 }
 
 pub enum Command {
-    FinishJob(update::Request),
+    Update(update::Request),
     // PostBlob(cannel::Request),
 }
 
