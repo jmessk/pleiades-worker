@@ -1,6 +1,6 @@
+use clap::Parser;
 use std::time::Duration;
 
-const ITERATION: usize = 200;
 const INTERVAL: Duration = Duration::from_millis(20);
 
 #[tokio::main]
@@ -12,20 +12,16 @@ async fn main() {
     //
     // /////
 
+    // parse command line arguments
+    //
+    let args = Arg::parse();
+    let script = std::fs::read(args.script_path).unwrap();
+    //
+    // /////
+
     let client = pleiades::Client::try_new(&pleiades_url).expect("failed to create client");
 
-    // let script = include_bytes!("./script/hello.js");
-    // let script = include_bytes!("./script/sleep.js");
-    let script = include_bytes!("./script/counter.js");
-    // let script = include_bytes!("./script/counter-sleep.js");
-    // let script = include_bytes!("./script/pend-sleep.js");
-    // let script = include_bytes!("./script/encoder-decoder.js");
-    // let script = include_bytes!("./script/blob-get.js");
-    // let script = include_bytes!("./script/blob-get-10.js");
-    // let script = include_bytes!("./script/http-get.js");
-    // let script = include_bytes!("./script/http-post.js");
-
-    let lambda_blob = client.blob().new(script.as_ref()).await.unwrap();
+    let lambda_blob = client.blob().new(script).await.unwrap();
     let lambda = lambda_blob.into_lambda("pleiades+example").await.unwrap();
 
     let input = client
@@ -37,7 +33,7 @@ async fn main() {
     let mut job_list = tokio::task::JoinSet::new();
     let mut ticker = tokio::time::interval(INTERVAL);
 
-    for i in 0..ITERATION {
+    for i in 0..args.iteration {
         let lambda = lambda.clone();
         let input = input.clone();
 
@@ -51,37 +47,6 @@ async fn main() {
     }
 
     let _job_list = job_list.join_all().await;
-
-    // let mut finished_job_list = tokio::task::JoinSet::new();
-
-    // wait the first job
-    // let first = job_list.first().unwrap().await;
-
-    // job_list.into_iter().for_each(|job| {
-    //     finished_job_list.spawn(async move {
-    //         let output = job.wait_finished(std::time::Duration::from_secs(10)).await;
-
-    //         match output {
-    //             Ok(finished_job) => Some(finished_job.id.0.into_owned()),
-    //             _ => {
-    //                 println!("job timeout");
-    //                 None
-    //             }
-    //         }
-    //     });
-    // });
-
-    // join all and filter None
-    // let finished_job_list = finished_job_list.join_all().await;
-    // let finished_job_list: Vec<Option<String>> = finished_job_list.join_all().await;
-    // let num_timeout = finished_job_list.iter().filter(|job| job.is_none()).count();
-    // println!(
-    //     "all jobs finished in {:?}, num_timeout: {num_timeout}",
-    //     start_outer.elapsed()
-    // );
-
-    // println!("start getting metrics");
-    // let raw_metrics = get_job_metrics(&client, finished_job_list).await;
 }
 
 async fn _get_job_metrics(
@@ -111,4 +76,13 @@ async fn _get_job_metrics(
     });
 
     metrics_list.join_all().await
+}
+
+#[derive(Debug, clap::Parser)]
+struct Arg {
+    #[clap(long = "script")]
+    script_path: String,
+    
+    #[clap(long = "iteration", default_value = "10")]
+    iteration: usize,
 }
