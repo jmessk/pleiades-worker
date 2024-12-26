@@ -24,6 +24,7 @@ chrono = "0.4.39"
 serde_yaml = "0.9.34"
 clap = { version = "4.5.23", features = ["derive"] }
 duration-str = "0.11.3"
+core_affinity = "0.8.1"
 
 [dev-dependencies]
 criterion = "0.5.1"

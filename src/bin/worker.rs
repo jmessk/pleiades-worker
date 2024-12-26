@@ -1,19 +1,24 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex, OnceLock},
+    time::Duration,
+};
 
 use clap::Parser;
+use core_affinity::CoreId;
 use pleiades_worker::{
     executor::Executor, scheduler::Policy, Contractor, DataManager, ExecutorManager, Fetcher,
     PendingManager, Scheduler, Updater, WorkerIdManager,
 };
 use tokio::task::JoinSet;
 
+static CPU_INCREMENT: OnceLock<Arc<Mutex<usize>>> = OnceLock::new();
+
 // #[tokio::main(flavor = "current_thread")]
-#[tokio::main(flavor = "multi_thread")]
-async fn main() {
+// #[tokio::main(flavor = "multi_thread")]
+fn main() {
     // Load .env file
     //
     dotenvy::dotenv().unwrap();
-    let pleiades_url = std::env::var("PLEIADES_URL").unwrap();
     //
     // /////
 
@@ -33,17 +38,41 @@ async fn main() {
     //
     tracing_subscriber::fmt()
         // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=info"))
-        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=debug"))
-        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=trace"))
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     //
     // /////
 
-    // Initialize components
+    // Initialize tokio runtime and set core affinity
     //
+    let cpu_list = core_affinity::get_core_ids().unwrap();
+    CPU_INCREMENT.get_or_init(|| Arc::new(Mutex::new(0)));
+
+    println!("cores: {}", cpu_list.len());
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .worker_threads(cpu_list.len() - config.num_executors)
+        .max_blocking_threads(config.num_executors)
+        .on_thread_start(|| {
+            let mut cpu_id_lock = CPU_INCREMENT.get().unwrap().lock().unwrap();
+            let cpu_id = *cpu_id_lock;
+            *cpu_id_lock += 1;
+            println!("cpu_id: {cpu_id}");
+            core_affinity::set_for_current(CoreId { id: cpu_id });
+        })
+        .enable_all()
+        .build()
+        .unwrap();
+
+    runtime.block_on(worker(config));
+}
+
+async fn worker(config: WorkerConfig) {
+    let pleiades_url = std::env::var("PLEIADES_URL").unwrap();
     let client = Arc::new(pleiades_api::Client::try_new(&pleiades_url).unwrap());
 
+    // Initialize components
+    //
     let (mut fetcher, fetcher_controller) = Fetcher::new(client.clone());
     let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_controller);
     let (mut contractor, contractor_controller) = Contractor::new(
@@ -98,6 +127,7 @@ async fn main() {
 
     let worker_id_manager = WorkerIdManager::new(client).await;
 
+    println!("worker_id_manager");
     let (mut scheduler, scheduler_controller) = Scheduler::new(
         worker_id_manager,
         contractor_controller,
