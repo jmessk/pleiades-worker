@@ -296,6 +296,8 @@ impl Scheduler {
                         let handle = self.controllers.pending.register(job).await;
                         let job = handle.response_receiver.await.unwrap().job;
 
+                        println!("Job is pending");
+
                         let executor_controller = self.executor_manager.shortest();
                         self.enqueue_execute(job, executor_controller).await;
                     }
