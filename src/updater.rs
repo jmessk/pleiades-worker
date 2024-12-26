@@ -95,7 +95,7 @@ impl Updater {
             Some(instant) => instant.elapsed(),
             None => Duration::ZERO,
         };
-        println!("overall: {:?}", overall);
+        println!("overall: {overall:?}ms, {} jobs", metrics.len());
         save_csv(overall, metrics);
     }
 
