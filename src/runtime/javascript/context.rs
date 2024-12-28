@@ -103,6 +103,14 @@ impl JsContext {
                 NativeFunction::from_fn_ptr(function::sync_sleep),
             )
             .unwrap();
+
+        context
+            .register_global_builtin_callable(
+                js_string!("yieldNow"),
+                1,
+                NativeFunction::from_fn_ptr(function::yield_now),
+            )
+            .unwrap();
     }
 
     fn register_builtin_modules(context: &mut Context) {

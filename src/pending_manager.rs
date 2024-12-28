@@ -196,6 +196,20 @@ impl PendingManager {
                     let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
                     match runtime_request {
+                        RuntimeRequest::Yield => {
+                            job.status = JobStatus::Resolving;
+
+                            tokio::spawn(async move {
+                                job.status = JobStatus::Ready(RuntimeResponse::Yield);
+                                request
+                                    .response_sender
+                                    .send(register::Response { job })
+                                    .unwrap();
+
+                                drop(permit);
+                                tracing::debug!("pend yield done");
+                            });
+                        }
                         RuntimeRequest::Sleep(duration) => {
                             job.status = JobStatus::Resolving;
 

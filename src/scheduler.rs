@@ -172,6 +172,10 @@ impl Scheduler {
         let pending = self.pending;
         let contracting = self.contracting;
 
+        dbg!(deadline_sum, queuing_time_sum, pending, contracting);
+        if deadline_sum < queuing_time_sum + pending + contracting {
+            eprintln!("error")
+        }
         let capacity_sum = deadline_sum - (queuing_time_sum + pending + contracting);
 
         let available_jobs = std::cmp::min(
@@ -180,11 +184,14 @@ impl Scheduler {
         );
 
         tracing::debug!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
+        // println!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
         for _ in 0..available_jobs {
             self.add_contracting(job_deadline);
             self.back_contract(worker_id).await;
         }
     }
+
+    // fn calc_available_jobs(&self)
 
     fn add_contracting(&mut self, duration: Duration) {
         self.contracting += duration;
@@ -318,7 +325,10 @@ impl Scheduler {
             }
 
             if self.contracting.is_zero() {
+                // let start = std::time::Instant::now();
                 self.contract(job_deadline, &default_worker_id).await;
+                // let elapsed = start.elapsed();
+                // println!("Contracting time: {:?}", elapsed);
             }
         }
     }
@@ -367,8 +377,15 @@ impl Scheduler {
                 continue;
             }
 
-            if self.contracting.is_zero() {
+            // if self.contracting.is_zero() {
+            //     self.contract(job_deadline, &default_worker_id).await;
+            // }
+
+            if self.contracting < self.executor_manager.deadline_sum / 2 {
+                let start = std::time::Instant::now();
                 self.contract(job_deadline, &default_worker_id).await;
+                let elapsed = start.elapsed();
+                println!("time req contracting: {:?}", elapsed);
             }
         }
     }

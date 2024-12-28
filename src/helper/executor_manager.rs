@@ -28,7 +28,8 @@ impl ExecutorManager {
             .iter()
             .min_by_key(|item| {
                 let a = item.controller.max_queueing_time();
-                tracing::debug!("Executor {}: max_queuing_time: {:?}", item.controller.id, a);
+                // tracing::debug!("Executor {}: max_queuing_time: {:?}", item.controller.id, a);
+                // println!("Executor {}: max_queuing_time: {:?}", item.controller.id, a);
                 a
             })
             .unwrap();

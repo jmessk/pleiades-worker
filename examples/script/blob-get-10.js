@@ -3,7 +3,9 @@ import { blob } from "pleiades"
 async function fetch(input) {
     // console.log("get-blob-10.js");
 
-    for (let i = 0; i < 10; i++) {
+    let iteration = 10;
+
+    for (let i = 0; i < iteration; i++) {
         await blob.get("1");
     }
 

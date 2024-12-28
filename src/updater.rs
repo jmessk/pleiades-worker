@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
@@ -58,6 +61,7 @@ impl Updater {
         // edit
         let mut join_set = tokio::task::JoinSet::new();
         let mut first_instant = None;
+        let mut end = Instant::now();
 
         while let Some(command) = self.command_receiver.recv().await {
             tracing::trace!("updating job");
@@ -73,6 +77,8 @@ impl Updater {
                     if first_instant.is_none() {
                         first_instant = Some(request.job.instant);
                     }
+
+                    end = Instant::now();
 
                     // tokio::spawn(async move {
                     join_set.spawn(async move {
@@ -92,10 +98,10 @@ impl Updater {
         // edit
         let metrics = join_set.join_all().await;
         let overall = match first_instant {
-            Some(instant) => instant.elapsed(),
+            Some(instant) => end - instant,
             None => Duration::ZERO,
         };
-        println!("overall: {overall:?}ms, {} jobs", metrics.len());
+        println!("summary: {overall:?}, {} jobs", metrics.len());
         save_csv(overall, metrics);
     }
 
@@ -138,7 +144,7 @@ impl Updater {
                     .await
                     .expect("no error handling: update");
 
-                tracing::info!("updated finished job");
+                tracing::debug!("updated finished job");
             }
             JobStatus::Cancelled => {
                 let update_request = pleiades_api::api::job::update::Request::builder()
@@ -152,7 +158,7 @@ impl Updater {
                     .await
                     .expect("no error handling: update");
 
-                tracing::info!("updated cancelled job");
+                tracing::debug!("updated cancelled job");
             }
             _ => {}
         };
@@ -182,7 +188,7 @@ impl Updater {
                     .await
                     .expect("no error handling: update");
 
-                tracing::info!("updated finished job");
+                tracing::debug!("updated finished job");
 
                 (
                     request.job.id,
@@ -205,7 +211,7 @@ impl Updater {
                     .await
                     .expect("no error handling: update");
 
-                tracing::info!("updated cancelled job");
+                tracing::debug!("updated cancelled job");
 
                 (
                     request.job.id,
@@ -232,7 +238,7 @@ fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Durat
     );
     let mut file = File::create(&file_name).unwrap();
 
-    file.write_all(format!("overall: {}\n", elapsed.as_millis()).as_bytes())
+    file.write_all(format!("summary: {}\n", elapsed.as_millis()).as_bytes())
         .unwrap();
     file.write_all(b"job_id,runtime,elapsed_ms\n").unwrap();
 
@@ -424,8 +430,12 @@ mod tests {
 
         let (mut fetcher, fetcher_api) = Fetcher::new(client.clone());
         let (mut data_manager, data_manager_controller) = DataManager::new(fetcher_api);
-        let (mut contractor, api) =
-            Contractor::new(client.clone(), data_manager_controller.clone(), 16, Duration::from_millis(100));
+        let (mut contractor, api) = Contractor::new(
+            client.clone(),
+            data_manager_controller.clone(),
+            16,
+            Duration::from_millis(100),
+        );
         let (mut updater, _updater_api) = Updater::new(client.clone(), data_manager_controller);
 
         tokio::spawn(async move {

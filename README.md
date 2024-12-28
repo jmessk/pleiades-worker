@@ -9,7 +9,8 @@
   - `--iteration`: number of iterations. default: 10
 
 ```bash
-cargo run --release --example job_generator -- --script ./examples/script/hello.js --iteration 100
+./run_generator.bash -s ./examples/script/hello.js -i 100
+# cargo run --release --example job_generator -- --script ./examples/script/hello.js --iteration 100
 ```
 
 ### Worker
@@ -26,5 +27,6 @@ job_deadline: 100ms
   - `--config`: path to the config file
 
 ```bash
-cargo run --release --bin worker -- --config ./config/cooperative.yml
+./run_worker.bash --config ./config/cooperative.yml
+# cargo run --release --bin worker -- --config ./config/cooperative.yml
 ```

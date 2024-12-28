@@ -121,7 +121,7 @@ impl Contractor {
         request: contract::Request,
         job_deadline: Duration,
     ) {
-        tracing::debug!("contracting: worker_id={}", request.worker_id);
+        tracing::trace!("contracting: worker_id={}", request.worker_id);
         // Fetch a new job
         //
         let contract_request = pleiades_api::api::worker::contract::Request::builder()
@@ -145,11 +145,11 @@ impl Contractor {
 
         let job_id = match maybe_job.job_id {
             Some(job_id) => {
-                tracing::info!("contracted");
+                tracing::debug!("contracted");
                 job_id
             }
             None => {
-                tracing::debug!("no job");
+                tracing::trace!("no job");
 
                 request
                     .response_sender
@@ -215,7 +215,7 @@ impl Contractor {
             })
             .expect("contractor");
 
-        tracing::debug!("enqueue job");
+        tracing::trace!("enqueue job");
     }
 }
 

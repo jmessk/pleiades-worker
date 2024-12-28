@@ -103,3 +103,22 @@ pub fn sync_sleep(_this: &JsValue, args: &[JsValue], context: &mut Context) -> J
 
     Ok(JsValue::undefined())
 }
+
+pub fn yield_now(_this: &JsValue, _args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    // Create a request object and insert it into the context
+    RuntimeRequest::Yield.insert(context.realm());
+    tracing::trace!("request inserted into context");
+
+    let (promise, resolver) = JsPromise::new_pending(context);
+
+    let job = NativeJob::new(move |context| {
+        tracing::trace!("promise job called");
+        resolver
+            .resolve
+            .call(&JsValue::undefined(), &[JsValue::undefined()], context)
+    });
+
+    context.job_queue().enqueue_promise_job(job, context);
+
+    Ok(JsValue::from(promise))
+}

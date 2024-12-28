@@ -37,6 +37,7 @@ pub enum RuntimeContext {
 ///
 #[derive(Debug, PartialEq, Eq)]
 pub enum RuntimeRequest {
+    Yield,
     Sleep(Duration),
     Gpu(gpu::Request),
     Blob(blob::Request),
@@ -50,6 +51,7 @@ pub enum RuntimeRequest {
 ///
 #[derive(Debug, PartialEq, Eq)]
 pub enum RuntimeResponse {
+    Yield,
     Sleep,
     Gpu(gpu::Response),
     Blob(blob::Response),
