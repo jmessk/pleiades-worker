@@ -1,21 +1,15 @@
-use std::{
-    sync::{Arc, Mutex, OnceLock},
-    time::Duration,
-};
-
 use clap::Parser;
-use core_affinity::CoreId;
 use pleiades_worker::{
     executor::Executor, scheduler::Policy, Contractor, DataManager, ExecutorManager, Fetcher,
     PendingManager, Scheduler, Updater, WorkerIdManager,
 };
+use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
 
-static CPU_INCREMENT: OnceLock<Arc<Mutex<usize>>> = OnceLock::new();
-
 // #[tokio::main(flavor = "current_thread")]
-// #[tokio::main(flavor = "multi_thread")]
-fn main() {
+#[tokio::main(flavor = "multi_thread")]
+// fn main() {
+async fn main() {
     // Load .env file
     //
     dotenvy::dotenv().unwrap();
@@ -45,26 +39,24 @@ fn main() {
 
     // Initialize tokio runtime and set core affinity
     //
-    let cpu_list = core_affinity::get_core_ids().unwrap();
-    CPU_INCREMENT.get_or_init(|| Arc::new(Mutex::new(0)));
+    // let cpu_list = core_affinity::get_core_ids().unwrap();
 
-    println!("cores: {}", cpu_list.len());
+    // println!("cores: {}", cpu_list.len());
 
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .worker_threads(cpu_list.len() - config.num_executors)
-        .max_blocking_threads(config.num_executors)
-        .on_thread_start(|| {
-            let mut cpu_id_lock = CPU_INCREMENT.get().unwrap().lock().unwrap();
-            let cpu_id = *cpu_id_lock;
-            *cpu_id_lock += 1;
-            println!("cpu_id: {cpu_id}");
-            core_affinity::set_for_current(CoreId { id: cpu_id });
-        })
-        .enable_all()
-        .build()
-        .unwrap();
+    // let runtime = tokio::runtime::Builder::new_current_thread()
+    //     .worker_threads(cpu_list.len() - config.num_executors)
+    //     .max_blocking_threads(config.num_executors)
+    //     .on_thread_start(|| {
+    //         static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
+    //         let id = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    //         core_affinity::set_for_current(CoreId { id });
+    //     })
+    //     .enable_all()
+    //     .build()
+    //     .unwrap();
 
-    runtime.block_on(worker(config));
+    // runtime.block_on(worker(config));
+    worker(config).await;
 }
 
 async fn worker(config: WorkerConfig) {
@@ -127,7 +119,6 @@ async fn worker(config: WorkerConfig) {
 
     let worker_id_manager = WorkerIdManager::new(client).await;
 
-    println!("worker_id_manager");
     let (mut scheduler, scheduler_controller) = Scheduler::new(
         worker_id_manager,
         contractor_controller,

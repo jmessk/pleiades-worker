@@ -81,9 +81,9 @@ async fn _get_job_metrics(
 
 #[derive(Debug, clap::Parser)]
 struct Arg {
-    #[clap(long = "script")]
+    #[clap(long = "script", short = 's')]
     script_path: String,
 
-    #[clap(long = "iteration", default_value = "10")]
+    #[clap(long = "iteration", short = 'i', default_value = "10")]
     iteration: usize,
 }

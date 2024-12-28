@@ -95,6 +95,14 @@ impl JsContext {
                 NativeFunction::from_fn_ptr(function::sleep),
             )
             .unwrap();
+
+        context
+            .register_global_builtin_callable(
+                js_string!("syncSleep"),
+                1,
+                NativeFunction::from_fn_ptr(function::sync_sleep),
+            )
+            .unwrap();
     }
 
     fn register_builtin_modules(context: &mut Context) {
