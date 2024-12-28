@@ -168,7 +168,7 @@ impl Updater {
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
         request: update::Request,
-    ) -> (String, String, &'static str, Duration, Vec<usize>) {
+    ) -> (String, String, &'static str, Duration) {
         match request.job.status {
             JobStatus::Finished(output) => {
                 let elapsed = request.job.instant.elapsed();
@@ -195,7 +195,6 @@ impl Updater {
                     request.job.lambda.runtime,
                     "Finished",
                     elapsed,
-                    request.job.exec_history,
                 )
             }
             JobStatus::Cancelled => {
@@ -219,7 +218,6 @@ impl Updater {
                     request.job.lambda.runtime,
                     "Cancelled",
                     elapsed,
-                    request.job.exec_history,
                 )
             }
             _ => unreachable!(),
@@ -227,7 +225,7 @@ impl Updater {
     }
 }
 
-fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Duration, Vec<usize>)>) {
+fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Duration)>) {
     use chrono;
     use std::fs::File;
     use std::io::prelude::*;
@@ -246,14 +244,13 @@ fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Durat
 
     metrics
         .iter()
-        .for_each(|(job_id, runtime, status, elapsed, history)| {
+        .for_each(|(job_id, runtime, status, elapsed)| {
             let line = format!(
-                "{},{},{},{},{:?}\n",
+                "{},{},{},{}\n",
                 job_id,
                 runtime,
                 status,
                 elapsed.as_millis(),
-                history
             );
             file.write_all(line.as_bytes()).unwrap();
         });

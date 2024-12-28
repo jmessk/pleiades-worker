@@ -3,7 +3,7 @@ use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
     contractor, executor,
-    helper::{ExecutorManager, WorkerIdManager},
+    helper::WorkerIdManager,
     pending_manager,
     pleiades_type::{Job, JobStatus},
     updater,
@@ -14,17 +14,22 @@ use crate::{
 ///
 ///
 ///
-struct Controllers {
-    scheduler: Controller,
-    contractor: contractor::Controller,
-    updater: updater::Controller,
-    pending: pending_manager::Controller,
+#[derive(Clone)]
+pub struct Controllers {
+    pub contractor: contractor::Controller,
+    pub updater: updater::Controller,
+    pub pending: pending_manager::Controller,
 }
 
+/// Policy
+///
+///
+///
+///
 pub enum Policy {
-    FastContract,
-    BlockingPipeline(Duration),
-    CooperativePipeline(Duration),
+    // FastContract,
+    // BlockingPipeline(Duration),
+    CooperativePipeline,
 }
 
 /// Scheduler
@@ -33,89 +38,84 @@ pub enum Policy {
 ///
 ///
 pub struct Scheduler {
+    id: usize,
     command_receiver: mpsc::Receiver<Command>,
-    max_concurrency: usize,
     semaphore: Arc<Semaphore>,
 
+    executor_deadline: Duration,
     contracting: Duration,
     pending: Duration,
 
     controllers: Controllers,
-    executor_manager: ExecutorManager,
+    sched_controller: SchedController,
+    exec_controller: executor::Controller,
     worker_id_manager: WorkerIdManager,
 }
 
 impl Scheduler {
+    const MAX_CONCURRENCY: usize = 128;
     /// new
     ///
     ///
     pub fn new(
+        id: usize,
+        controllers: Controllers,
+        executor_controller: executor::Controller,
         worker_id_manager: WorkerIdManager,
-        contractor_controller: contractor::Controller,
-        updater_controller: updater::Controller,
-        pending_manager_controller: pending_manager::Controller,
-        executor_manager: ExecutorManager,
-    ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(256);
+        executor_deadline: Duration,
+    ) -> (Self, SchedController) {
+        let (command_sender, command_receiver) = mpsc::channel(64);
 
-        let controller = Controller { command_sender };
+        let sched_controller = SchedController { command_sender };
 
         let scheduler = Self {
+            id,
             command_receiver,
-            max_concurrency: 512,
-            semaphore: Arc::new(Semaphore::new(512)),
-            contracting: Duration::default(),
-            pending: Duration::default(),
-            controllers: Controllers {
-                scheduler: controller.clone(),
-                contractor: contractor_controller,
-                updater: updater_controller,
-                pending: pending_manager_controller,
-            },
-            executor_manager,
+            semaphore: Arc::new(Semaphore::new(Self::MAX_CONCURRENCY)),
+            executor_deadline,
+            contracting: Duration::ZERO,
+            pending: Duration::ZERO,
+            controllers,
+            sched_controller: sched_controller.clone(),
+            exec_controller: executor_controller,
             worker_id_manager,
         };
 
-        (scheduler, controller)
+        (scheduler, sched_controller)
     }
 
     /// run
     ///
     ///
     pub async fn run(&mut self, policy: Policy) {
-        tracing::info!("running");
+        tracing::info!("Scheduler {}: running", self.id);
 
         match policy {
-            Policy::FastContract => self.fast_contract_policy().await,
-            Policy::BlockingPipeline(job_deadline) => self.blocking_pipeline(job_deadline).await,
-            Policy::CooperativePipeline(job_deadline) => {
-                self.cooperative_pipeline(job_deadline).await
-            }
+            Policy::CooperativePipeline => self.cooperative_pipeline().await,
         }
 
-        tracing::info!("shutdown");
+        tracing::info!("Scheduler {}: shutdown", self.id);
     }
 
     /// wait_for_shutdown
     ///
     ///
     async fn schedule_shutdown(&self) {
-        let scheduler_controller = self.controllers.scheduler.clone();
+        let scheduler_controller = self.sched_controller.clone();
         let semaphore = self.semaphore.clone();
-        let max_concurrency = self.max_concurrency;
 
         tokio::spawn(async move {
-            let _ = semaphore.acquire_many(max_concurrency as u32).await;
+            let _ = semaphore.acquire_many(Self::MAX_CONCURRENCY as u32).await;
             scheduler_controller.signal_shutdown_done().await;
         });
 
-        tracing::info!("scheduled shutdown");
+        tracing::info!("Scheduler {}: scheduled shutdown", self.id);
     }
 
     /// contract_background
     ///
     ///
-    async fn back_contract(&self, worker_id: &str) {
+    async fn bg_contract(&self, worker_id: &str) {
         let handle = self
             .controllers
             .contractor
@@ -123,7 +123,7 @@ impl Scheduler {
             .await
             .unwrap();
 
-        let scheduler_controller = self.controllers.scheduler.clone();
+        let scheduler_controller = self.sched_controller.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
         tokio::spawn(async move {
@@ -133,23 +133,21 @@ impl Scheduler {
                 None => scheduler_controller.signal_no_job().await,
             }
 
-            println!("contracted");
-
             drop(permit);
         });
     }
 
-    async fn enqueue_execute(&self, job: Job, executor_controller: &executor::Controller) {
-        let handle = executor_controller.enqueue(job).await;
-        let scheduler_controller = self.controllers.scheduler.clone();
+    async fn enqueue_execute(&self, job: Job) {
+        let handle = self.exec_controller.enqueue(job).await;
+        let scheduler_controller = self.sched_controller.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
-        let id = executor_controller.id;
+        let id = self.id;
 
         tokio::spawn(async move {
             let response = handle.recv().await;
             scheduler_controller.enqueue(response.job).await;
-            tracing::debug!("enqueued job to executor {:?}", id);
+            tracing::debug!("Scheduler {}: enqueued job to executor", id);
 
             drop(permit);
         });
@@ -157,7 +155,7 @@ impl Scheduler {
 
     async fn enqueue_pend(&self, job: Job) {
         let handle = self.controllers.pending.register(job).await;
-        let scheduler_controller = self.controllers.scheduler.clone();
+        let scheduler_controller = self.sched_controller.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
         tokio::spawn(async move {
@@ -168,38 +166,35 @@ impl Scheduler {
         });
     }
 
-    fn available_time(&self) -> Duration {
-        let deadline_sum = self.executor_manager.deadline_sum;
-        let queuing_time_sum = self.executor_manager.queuing_time_sum();
+    fn capacity(&self) -> Duration {
+        let max = self.executor_deadline;
+        let queuing = self.exec_controller.max_queueing_time();
         let pending = self.pending;
         let contracting = self.contracting;
 
-        let used = queuing_time_sum + pending + contracting;
-
-        if deadline_sum < used {
-            Duration::ZERO
-        } else {
-            deadline_sum - used
+        // dbg!(max, queuing, pending, contracting);
+        if max < queuing + pending + contracting {
+            println!("over capacity");
         }
+
+        max.checked_sub(queuing + pending + contracting)
+            .unwrap_or(Duration::ZERO)
     }
 
     async fn contract(&mut self, job_deadline: Duration, worker_id: &str) {
-        let capacity_sum = self.available_time();
+        let capacity = self.capacity();
+        let available_jobs = capacity.div_duration_f32(job_deadline) as usize;
 
-        let available_jobs = std::cmp::min(
-            capacity_sum.div_duration_f32(job_deadline) as usize,
-            self.controllers.contractor.max_concurrency,
+        tracing::debug!(
+            "Scheduler {}: capacity: {capacity:?}, available_jobs: {available_jobs}",
+            self.id,
         );
 
-        tracing::debug!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
-        // println!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
         for _ in 0..available_jobs {
             self.add_contracting(job_deadline);
-            self.back_contract(worker_id).await;
+            self.bg_contract(worker_id).await;
         }
     }
-
-    // fn calc_available_jobs(&self)
 
     fn add_contracting(&mut self, duration: Duration) {
         self.contracting += duration;
@@ -219,151 +214,28 @@ impl Scheduler {
 }
 
 impl Scheduler {
-    /// fast_contract_policy
-    ///
-    ///
-    ///
-    ///
-    async fn fast_contract_policy(&mut self) {
-        let mut shutdown_flag = false;
-
-        let default_worker_id = self.worker_id_manager.get_default();
-
-        for _ in 0..self.controllers.contractor.max_concurrency {
-            self.back_contract(&default_worker_id).await;
-        }
-
-        while let Some(command) = self.command_receiver.recv().await {
-            // println!("------command: {:?}", command);
-            match command {
-                Command::Enqueue(enqueue::Request { job }) => match job.status {
-                    JobStatus::Assigned | JobStatus::Ready(_) => {
-                        let executor = self.executor_manager.shortest();
-                        self.enqueue_execute(job, executor).await;
-                        // println!("Enqueued job to Executor {:?}", executor.id);
-                    }
-                    JobStatus::Finished(_) => {
-                        // println!("Job is finished");
-                        // println!("Job remaining time: {:?}", job.remaining_time);
-                        self.controllers.updater.update_job(job).await;
-
-                        if shutdown_flag {
-                            continue;
-                        }
-
-                        self.back_contract(&default_worker_id).await;
-                    }
-                    JobStatus::Pending(_) => {
-                        // println!("Job is pending");
-                        self.enqueue_pend(job).await;
-                    }
-                    JobStatus::Cancelled => {
-                        // println!("Job is cancelled");
-                        self.controllers.updater.update_job(job).await;
-
-                        if shutdown_flag {
-                            continue;
-                        }
-
-                        self.back_contract(&default_worker_id).await;
-                    }
-                    _ => unreachable!(),
-                },
-                Command::NoJob => {
-                    // println!("No job is available");
-
-                    if shutdown_flag {
-                        continue;
-                    }
-
-                    self.back_contract(&default_worker_id).await;
-                }
-                Command::ShutdownReq => {
-                    self.schedule_shutdown().await;
-                    shutdown_flag = true;
-                }
-                Command::ShutdownDone => break,
-            }
-        }
-    }
-
-    /// blocking_pipeline
-    ///
-    ///
-    ///
-    ///
-    async fn blocking_pipeline(&mut self, job_deadline: Duration) {
-        let mut shutdown_flag = false;
-        let default_worker_id = self.worker_id_manager.get_default();
-
-        self.contract(job_deadline, &default_worker_id).await;
-
-        while let Some(command) = self.command_receiver.recv().await {
-            match command {
-                Command::Enqueue(enqueue::Request { job }) => match job.status {
-                    JobStatus::Assigned => {
-                        self.sub_contracting(job_deadline);
-                        let executor = self.executor_manager.shortest();
-                        self.enqueue_execute(job, executor).await;
-                    }
-                    JobStatus::Ready(_) => {}
-                    JobStatus::Pending(_) => {
-                        let handle = self.controllers.pending.register(job).await;
-                        let job = handle.response_receiver.await.unwrap().job;
-
-                        println!("Job is pending");
-
-                        let executor_controller = self.executor_manager.shortest();
-                        self.enqueue_execute(job, executor_controller).await;
-                    }
-                    JobStatus::Finished(_) => self.controllers.updater.update_job(job).await,
-                    JobStatus::Cancelled => self.controllers.updater.update_job(job).await,
-                    _ => unreachable!(),
-                },
-                Command::NoJob => self.sub_contracting(job_deadline),
-                Command::ShutdownReq => {
-                    shutdown_flag = true;
-                    self.schedule_shutdown().await;
-                }
-                Command::ShutdownDone => break,
-            }
-
-            if shutdown_flag {
-                continue;
-            }
-
-            if self.contracting.is_zero() {
-                let start = std::time::Instant::now();
-                self.contract(job_deadline, &default_worker_id).await;
-                let elapsed = start.elapsed();
-                println!("Contracting time: {:?}", elapsed);
-            }
-        }
-    }
-
     /// cooperative_pipeline
     ///
     ///
     ///
     ///
-    async fn cooperative_pipeline(&mut self, job_deadline: Duration) {
+    async fn cooperative_pipeline(&mut self) {
         let mut shutdown_flag = false;
-        let default_worker_id = self.worker_id_manager.get_default();
+        let (default_worker_id, default_job_deadline) = self.worker_id_manager.get_default();
 
-        self.contract(job_deadline, &default_worker_id).await;
+        self.contract(default_job_deadline, &default_worker_id)
+            .await;
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Enqueue(enqueue::Request { job }) => match job.status {
                     JobStatus::Assigned => {
-                        self.sub_contracting(job_deadline);
-                        let executor = self.executor_manager.shortest();
-                        self.enqueue_execute(job, executor).await;
+                        self.sub_contracting(default_job_deadline);
+                        self.enqueue_execute(job).await;
                     }
                     JobStatus::Ready(_) => {
                         self.sub_pending(job.rem_time);
-                        let executor = self.executor_manager.shortest();
-                        self.enqueue_execute(job, executor).await;
+                        self.enqueue_execute(job).await;
                     }
                     JobStatus::Pending(_) => {
                         self.add_pending(job.rem_time);
@@ -373,7 +245,7 @@ impl Scheduler {
                     JobStatus::Cancelled => self.controllers.updater.update_job(job).await,
                     _ => unreachable!(),
                 },
-                Command::NoJob => self.sub_contracting(job_deadline),
+                Command::NoJob => self.sub_contracting(default_job_deadline),
                 Command::ShutdownReq => {
                     shutdown_flag = true;
                     self.schedule_shutdown().await;
@@ -381,19 +253,9 @@ impl Scheduler {
                 Command::ShutdownDone => break,
             }
 
-            if shutdown_flag {
-                continue;
-            }
-
-            // if self.contracting.is_zero() {
-            //     self.contract(job_deadline, &default_worker_id).await;
-            // }
-
-            if self.contracting < self.executor_manager.deadline_sum / 2 {
-                // let start = std::time::Instant::now();
-                self.contract(job_deadline, &default_worker_id).await;
-                // let elapsed = start.elapsed();
-                // println!("time req contracting: {:?}", elapsed);
+            if !shutdown_flag {
+                self.contract(default_job_deadline, &default_worker_id)
+                    .await;
             }
         }
     }
@@ -405,11 +267,11 @@ impl Scheduler {
 ///
 ///
 #[derive(Clone)]
-pub struct Controller {
+pub struct SchedController {
     command_sender: mpsc::Sender<Command>,
 }
 
-impl Controller {
+impl SchedController {
     /// enqueue_ready
     ///
     pub async fn enqueue(&self, job: Job) {
@@ -436,28 +298,12 @@ impl Controller {
         let request = Command::ShutdownDone;
         self.command_sender.send(request).await.unwrap();
     }
-
-    // /// enqueue_assigned
-    // ///
-    // pub async fn enqueue_assigned(&self, job: Job) {
-    //     let request = Command::Assigned(assigned::Request { job });
-    //     self.command_sender.send(request).await.unwrap();
-    // }
-
-    // /// enqueue_pending
-    // ///
-    // pub async fn enqueue_pending(&self, job: Job) {
-    //     let request = Command::Assigned(assigned::Request { job });
-    //     self.command_sender.send(request).await.unwrap();
-    // }
 }
 
 #[derive(Debug)]
 pub enum Command {
     Enqueue(enqueue::Request),
     NoJob,
-    // Assigned(assigned::Request),
-    // Pending(pending::Request),
     ShutdownReq,
     ShutdownDone,
 }
@@ -470,19 +316,3 @@ pub mod enqueue {
         pub job: Job,
     }
 }
-
-// pub mod assigned {
-//     use super::*;
-
-//     pub struct Request {
-//         pub job: Job,
-//     }
-// }
-
-// pub mod pending {
-//     use super::*;
-
-//     pub struct Request {
-//         pub job: Job,
-//     }
-// }

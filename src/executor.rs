@@ -1,4 +1,3 @@
-use boa_engine::context;
 use cpu_time::ThreadTime;
 use std::ops::AddAssign;
 use std::sync::Arc;
@@ -93,64 +92,30 @@ impl Executor {
     }
 
     fn task_execute_job(&mut self, request: register::Request) {
-        // let scheduler_controller = self
-        //     .scheduler_controller
-        //     .as_ref()
-        //     .expect("SchedulerController is not set");
-
-        // let pending_manager_controller = self
-        //     .pending_manager_controller
-        //     .as_ref()
-        //     .expect("PendingManagerController is not set");
-
         let mut job = request.job;
-        job.exec_history.push(self.id);
 
         match job.status {
-            JobStatus::Assigned => {
-                // if self
-                //     .runtime
-                //     .create_context(&job.lambda, &job.input)
-                //     .inspect_err(|e| println!("Executor: {}", e))
-                //     .is_err()
-                // {
-                //     job.cancel();
-                //     // scheduler_controller.enqueue_nowait(job);
-                //     request
-                //         .response_sender
-                //         .send(register::Response { job })
-                //         .unwrap();
-
-                //     return;
-                // }
-                match self.runtime.create_context(&job.lambda, &job.input) {
-                    Ok(context) => {
-                        self.runtime.set_context(context);
-                    }
-                    Err(e) => {
-                        tracing::warn!("Executor {}: {}", self.id, e);
-                        job.cancel();
-
-                        // self.sub_queueing_time(job.rem_time);
-
-                        request
-                            .response_sender
-                            .send(register::Response { job })
-                            .unwrap();
-
-                        return;
-                    }
+            JobStatus::Assigned => match self.runtime.create_context(&job.lambda, &job.input) {
+                Ok(context) => {
+                    self.runtime.set_context(context);
                 }
-            }
+                Err(e) => {
+                    tracing::warn!("Executor {}: {}", self.id, e);
+                    job.cancel();
+
+                    request
+                        .response_sender
+                        .send(register::Response { job })
+                        .unwrap();
+
+                    return;
+                }
+            },
             JobStatus::Ready(response) => {
-                println!("Executor {}: Ready", self.id);
                 let context = match job.context {
                     Some(RuntimeContext::JavaScript(context)) => context,
                     _ => unreachable!(),
                 };
-
-                println!("Executor {}: set_context", self.id);
-                println!("Executor {}: history {:?}", self.id, job.exec_history);
 
                 self.runtime.set_context(context);
                 self.runtime.set_runtime_response(response).unwrap();
@@ -164,8 +129,6 @@ impl Executor {
             ..job
         };
 
-        // let temp_job_rem_time = job.rem_time;
-
         // execution
         //
         //
@@ -178,28 +141,18 @@ impl Executor {
 
             // stop measuring time
             let elapsed = start.elapsed();
-            tracing::debug!("Executor {}: job elapsed {:?}", self.id, elapsed);
-            println!("Executor {}: job elapsed {:?}", self.id, elapsed);
 
             job.sub_rem_time(elapsed);
 
             job_status
         };
 
-        // self.sub_queueing_time(temp_job_rem_time);
-
         let job = match job_status {
-            JobStatus::Finished(_) => {
-                if let Some(context) = self.runtime.get_context() {
-                    drop(context);
-                }
-
-                Job {
-                    status: job_status,
-                    context: None,
-                    ..job
-                }
-            }
+            JobStatus::Finished(_) => Job {
+                status: job_status,
+                context: None,
+                ..job
+            },
             JobStatus::Pending(_) if !job.is_timeout() => {
                 let context = match self.runtime.get_context() {
                     Some(context) => context,
@@ -224,87 +177,16 @@ impl Executor {
             .unwrap();
 
         tracing::trace!("Executor {}: finish execute", self.id);
-
-        // self.scheduler_controller
-        //     .as_mut()
-        //     .unwrap()
-        //     .enqueue_nowait(job);
-
-        // match job_status {
-        //     JobStatus::Finished(output) => {
-        //         let job = Job {
-        //             status: JobStatus::Finished(output),
-        //             context: Some(RuntimeContext::JavaScript(context)),
-        //             ..job
-        //         };
-
-        //         scheduler_controller.enqueue_nowait(job);
-        //     }
-        //     JobStatus::Pending(request) if !job.is_timeout() => {
-        //         let job = Job {
-        //             status: JobStatus::Pending(request),
-        //             context: Some(RuntimeContext::JavaScript(context)),
-        //             ..job
-        //         };
-
-        //         pending_manager_controller.enqueue_nowait(job);
-        //     }
-        //     _ => {
-        //         job.cancel();
-        //         scheduler_controller.enqueue_nowait(job);
-        //     }
-        // }
-
-        // let job_remaining_time = request.job.remaining_time;
-
-        // let mut processed_job = {
-        //     // start measuring time
-        //     let start = ThreadTime::now();
-
-        //     // execute job with runtime
-        //     let mut processed_job = self.runtime.execute(request.job);
-
-        //     // stop measuring time
-        //     processed_job.sub_remaining_time(start.elapsed());
-
-        //     processed_job
-        // };
-
-        // {
-        //     // update max_queueing_time
-        //     self.max_queueing_time
-        //         .lock()
-        //         .unwrap()
-        //         .sub_assign(job_remaining_time);
-        // }
-
-        // match processed_job.status {
-        //     JobStatus::Finished(_) | JobStatus::Cancelled => {
-        //         // self.updater_controller.update_job_nowait(processed_job);
-        //         self.scheduler_controller.enqueue_nowait(processed_job);
-        //     }
-        //     JobStatus::Pending(_) => {
-        //         if processed_job.is_timeout() {
-        //             println!("Job is timeout");
-        //             processed_job.cancel();
-        //             // self.updater_controller.update_job_nowait(processed_job);
-        //             self.scheduler_controller.enqueue_nowait(processed_job);
-        //         } else {
-        //             self.pending_manager_controller
-        //                 .enqueue_nowait(processed_job);
-        //         }
-        //     }
-        //     _ => {
-        //         processed_job.cancel();
-        //         // self.updater_controller.update_job_nowait(processed_job);
-        //         self.scheduler_controller.enqueue_nowait(processed_job);
-        //         unreachable!();
-        //     }
-        // }
     }
 
-    fn _sub_queueing_time(&self, duration: Duration) {
+    fn sub_queueing_time(&self, duration: Duration) {
         let mut max_queueing_time = self._max_queueing_time.lock().unwrap();
+        if *max_queueing_time < duration {
+            print!(
+                "max_queueing_time: {:?}, duration: {:?}",
+                max_queueing_time, duration
+            );
+        }
         *max_queueing_time = max_queueing_time.checked_sub(duration).unwrap();
     }
 }

@@ -1,6 +1,6 @@
 use boa_engine::{
     job::{FutureJob, JobQueue, NativeJob},
-    Context, Source,
+    Context,
 };
 use std::{cell::RefCell, collections::VecDeque};
 

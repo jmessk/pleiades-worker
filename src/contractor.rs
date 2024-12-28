@@ -85,7 +85,8 @@ impl Contractor {
             tokio::spawn(async move {
                 match command {
                     Command::Contract(request) => {
-                        Self::task_contract(client, data_manager_controller, request, job_deadline).await
+                        Self::task_contract(client, data_manager_controller, request, job_deadline)
+                            .await
                     }
                 }
 
@@ -144,10 +145,7 @@ impl Contractor {
         // };
 
         let job_id = match maybe_job.job_id {
-            Some(job_id) => {
-                tracing::debug!("contracted");
-                job_id
-            }
+            Some(job_id) => job_id,
             None => {
                 tracing::trace!("no job");
 
@@ -206,7 +204,6 @@ impl Contractor {
 
             // instant
             instant: Instant::now(),
-            exec_history: Vec::new(),
         };
 
         request
@@ -397,8 +394,12 @@ mod tests {
         let (mut _fetcher, fetcher_api) = fetcher::Fetcher::new(client.clone());
         let (mut _data_manager, data_manager_controller) =
             data_manager::DataManager::new(fetcher_api);
-        let (mut contractor, contractor_api) =
-            Contractor::new(client.clone(), data_manager_controller, 16, Duration::from_millis(100));
+        let (mut contractor, contractor_api) = Contractor::new(
+            client.clone(),
+            data_manager_controller,
+            16,
+            Duration::from_millis(100),
+        );
 
         tokio::spawn(async move {
             contractor.run().await;

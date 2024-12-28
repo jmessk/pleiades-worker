@@ -61,7 +61,6 @@ pub struct Job {
     pub input: Box<Blob>,
 
     pub instant: Instant,
-    pub exec_history: Vec<usize>,
 }
 
 impl Default for Job {
@@ -76,7 +75,6 @@ impl Default for Job {
             input: Box::new(Blob::default()),
 
             instant: Instant::now(),
-            exec_history: Vec::new(),
         }
     }
 }

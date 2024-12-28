@@ -1,8 +1,7 @@
 use clap::Parser;
 use pleiades_worker::{
-    executor::Executor,
-    scheduler::{Controllers, Policy},
-    Contractor, DataManager, Fetcher, PendingManager, Scheduler, Updater, WorkerIdManager,
+    executor::Executor, _scheduler::Policy, Contractor, DataManager, ExecutorManager, Fetcher,
+    PendingManager, GlobalScheduler, Updater, WorkerIdManager,
 };
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
@@ -24,7 +23,7 @@ async fn main() {
         Some(path) => WorkerConfig::from_path(path),
         None => WorkerConfig::default(),
     };
-
+    // print with format
     println!("config: {config:#?}");
     //
     // /////
@@ -103,45 +102,44 @@ async fn worker(config: WorkerConfig) {
     //
     // /////
 
-    // Initialize executor and scheduler
+    // Initialize executor
     //
-    let controllers = Controllers {
-        contractor: contractor_controller,
-        updater: updater_controller,
-        pending: pending_manager_controller,
-    };
-    let worker_id_manager = WorkerIdManager::new(client, config.job_deadline).await;
+    let mut executor_manager_builder = ExecutorManager::builder();
 
-    let sched_controller_list = (0..config.num_executors)
-        .map(|i| {
-            let (mut executor, exec_controller) = Executor::new(i);
-            let (mut scheduler, sched_controller) = Scheduler::new(
-                i,
-                controllers.clone(),
-                exec_controller,
-                worker_id_manager.clone(),
-                config.exec_deadline,
-            );
+    for i in 0..config.num_executors {
+        let (mut executor, executor_controller) = Executor::new(i);
+        executor_manager_builder.insert(executor_controller, config.exec_deadline);
 
-            join_set.spawn_blocking(move || executor.run());
-            join_set.spawn(async move {
-                scheduler.run(Policy::CooperativePipeline).await;
-            });
+        join_set.spawn_blocking(move || executor.run());
+    }
 
-            sched_controller
-        })
-        .collect::<Vec<_>>();
+    let executor_manager = executor_manager_builder.build().unwrap();
     //
     // /////
 
-    drop(controllers);
+    let worker_id_manager = WorkerIdManager::new(client).await;
+
+    let (mut scheduler, scheduler_controller) = GlobalScheduler::new(
+        worker_id_manager,
+        contractor_controller,
+        updater_controller,
+        pending_manager_controller,
+        executor_manager,
+    );
+
+    join_set.spawn(async move {
+        scheduler
+            .run(match config.policy.as_str() {
+                "fast_contract" => Policy::FastContract,
+                "blocking_pipeline" => Policy::BlockingPipeline(config.job_deadline),
+                "cooperative_pipeline" => Policy::CooperativePipeline(config.job_deadline),
+                _ => panic!("unknown policy"),
+            })
+            .await;
+    });
 
     tokio::signal::ctrl_c().await.unwrap();
-    sched_controller_list.into_iter().for_each(|controller| {
-        join_set.spawn(async move {
-            controller.signal_shutdown_req().await;
-        });
-    });
+    scheduler_controller.signal_shutdown_req().await;
 
     join_set.join_all().await;
 }

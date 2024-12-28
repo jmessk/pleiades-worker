@@ -1,18 +1,21 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
+#[derive(Debug, Clone)]
 pub struct WorkerIdManager {
     pub client: Arc<pleiades_api::Client>,
-    pub set: HashMap<String, String>,
+    pub set: HashMap<String, (String, Duration)>,
 }
 
 impl WorkerIdManager {
-    pub async fn new(client: Arc<pleiades_api::Client>) -> Self {
+    pub async fn new(client: Arc<pleiades_api::Client>, default_job_deadline: Duration) -> Self {
         let mut manager = Self {
             client,
             set: HashMap::new(),
         };
 
-        manager.insert("default", &["pleiades+example"]).await;
+        manager
+            .insert("default", &["pleiades+example"], default_job_deadline)
+            .await;
         manager
     }
 
@@ -26,16 +29,21 @@ impl WorkerIdManager {
         response.worker_id
     }
 
-    pub async fn insert<T: Into<String>>(&mut self, name: T, runtimes: &[&str]) {
+    pub async fn insert<T: Into<String>>(
+        &mut self,
+        key: T,
+        runtimes: &[&str],
+        job_deadline: Duration,
+    ) {
         let worker_id = self.register_worker(runtimes).await;
-        self.set.insert(name.into(), worker_id);
+        self.set.insert(key.into(), (worker_id, job_deadline));
     }
 
-    pub fn get(&self, name: &str) -> Option<String> {
-        self.set.get(name).cloned()
+    pub fn get(&self, key: &str) -> Option<(String, Duration)> {
+        self.set.get(key).cloned()
     }
 
-    pub fn get_default(&self) -> String {
+    pub fn get_default(&self) -> (String, Duration) {
         self.get("default").unwrap()
     }
 }
