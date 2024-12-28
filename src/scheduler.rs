@@ -133,6 +133,8 @@ impl Scheduler {
                 None => scheduler_controller.signal_no_job().await,
             }
 
+            println!("contracted");
+
             drop(permit);
         });
     }
@@ -145,7 +147,7 @@ impl Scheduler {
         let id = executor_controller.id;
 
         tokio::spawn(async move {
-            let response = handle.response_receiver.await.unwrap();
+            let response = handle.recv().await;
             scheduler_controller.enqueue(response.job).await;
             tracing::debug!("enqueued job to executor {:?}", id);
 
@@ -166,17 +168,23 @@ impl Scheduler {
         });
     }
 
-    async fn contract(&mut self, job_deadline: Duration, worker_id: &str) {
+    fn available_time(&self) -> Duration {
         let deadline_sum = self.executor_manager.deadline_sum;
         let queuing_time_sum = self.executor_manager.queuing_time_sum();
         let pending = self.pending;
         let contracting = self.contracting;
 
-        dbg!(deadline_sum, queuing_time_sum, pending, contracting);
-        if deadline_sum < queuing_time_sum + pending + contracting {
-            eprintln!("error")
+        let used = queuing_time_sum + pending + contracting;
+
+        if deadline_sum < used {
+            Duration::ZERO
+        } else {
+            deadline_sum - used
         }
-        let capacity_sum = deadline_sum - (queuing_time_sum + pending + contracting);
+    }
+
+    async fn contract(&mut self, job_deadline: Duration, worker_id: &str) {
+        let capacity_sum = self.available_time();
 
         let available_jobs = std::cmp::min(
             capacity_sum.div_duration_f32(job_deadline) as usize,
@@ -184,7 +192,7 @@ impl Scheduler {
         );
 
         tracing::debug!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
-        // println!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
+        println!("capacity_sum: {capacity_sum:?}, available_jobs {available_jobs}");
         for _ in 0..available_jobs {
             self.add_contracting(job_deadline);
             self.back_contract(worker_id).await;
@@ -377,16 +385,16 @@ impl Scheduler {
                 continue;
             }
 
-            // if self.contracting.is_zero() {
-            //     self.contract(job_deadline, &default_worker_id).await;
-            // }
-
-            if self.contracting < self.executor_manager.deadline_sum / 2 {
-                let start = std::time::Instant::now();
+            if self.contracting.is_zero() {
                 self.contract(job_deadline, &default_worker_id).await;
-                let elapsed = start.elapsed();
-                println!("time req contracting: {:?}", elapsed);
             }
+
+            // if self.contracting < self.executor_manager.deadline_sum / 2 {
+            //     let start = std::time::Instant::now();
+            //     self.contract(job_deadline, &default_worker_id).await;
+            //     let elapsed = start.elapsed();
+            //     println!("time req contracting: {:?}", elapsed);
+            // }
         }
     }
 }

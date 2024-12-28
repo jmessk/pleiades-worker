@@ -24,7 +24,7 @@ pub struct Executor {
 
     /// max_queueing_time
     ///
-    max_queueing_time: Arc<Mutex<Duration>>,
+    _max_queueing_time: Arc<Mutex<Duration>>,
 
     /// runtime
     ///
@@ -46,7 +46,7 @@ impl Executor {
         let data_manager = Self {
             command_receiver,
             id,
-            max_queueing_time: max_queueing_time.clone(),
+            _max_queueing_time: max_queueing_time.clone(),
             runtime: JsRuntime::init(),
         };
 
@@ -128,7 +128,7 @@ impl Executor {
                         tracing::warn!("Executor {}: {}", self.id, e);
                         job.cancel();
 
-                        self.sub_queueing_time(job.rem_time);
+                        // self.sub_queueing_time(job.rem_time);
 
                         request
                             .response_sender
@@ -157,7 +157,7 @@ impl Executor {
             ..job
         };
 
-        let temp_job_rem_time = job.rem_time;
+        // let temp_job_rem_time = job.rem_time;
 
         // execution
         //
@@ -178,7 +178,7 @@ impl Executor {
             job_status
         };
 
-        self.sub_queueing_time(temp_job_rem_time);
+        // self.sub_queueing_time(temp_job_rem_time);
 
         let job = match job_status {
             JobStatus::Finished(_) => Job {
@@ -289,8 +289,8 @@ impl Executor {
         // }
     }
 
-    fn sub_queueing_time(&self, duration: Duration) {
-        let mut max_queueing_time = self.max_queueing_time.lock().unwrap();
+    fn _sub_queueing_time(&self, duration: Duration) {
+        let mut max_queueing_time = self._max_queueing_time.lock().unwrap();
         *max_queueing_time = max_queueing_time.checked_sub(duration).unwrap();
     }
 }
@@ -331,23 +331,24 @@ impl Controller {
     // }
 
     pub async fn enqueue(&self, job: Job) -> register::Handle {
+        let rem_time = job.rem_time;
+
         {
-            self.max_queueing_time
-                .lock()
-                .unwrap()
-                .add_assign(job.rem_time);
+            self.max_queueing_time.lock().unwrap().add_assign(rem_time);
         }
 
         let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
-
         let request = Command::Register(register::Request {
             response_sender,
             job,
         });
-
         self.command_sender.send(request).await.unwrap();
 
-        register::Handle { response_receiver }
+        register::Handle {
+            response_receiver,
+            max_queueing_time: self.max_queueing_time.clone(),
+            prev_rem_time: rem_time,
+        }
     }
 }
 
@@ -371,12 +372,31 @@ pub enum Command {
 // }
 
 pub mod register {
+    use std::ops::SubAssign as _;
+
     use tokio::sync::oneshot;
 
     use super::*;
 
     pub struct Handle {
-        pub response_receiver: oneshot::Receiver<Response>,
+        pub(super) response_receiver: oneshot::Receiver<Response>,
+        pub(super) prev_rem_time: Duration,
+        pub(super) max_queueing_time: Arc<Mutex<Duration>>,
+    }
+
+    impl Handle {
+        pub async fn recv(self) -> Response {
+            let response = self.response_receiver.await.unwrap();
+
+            {
+                self.max_queueing_time
+                    .lock()
+                    .unwrap()
+                    .sub_assign(self.prev_rem_time);
+            }
+
+            response
+        }
     }
 
     pub struct Request {
