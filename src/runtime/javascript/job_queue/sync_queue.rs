@@ -1,6 +1,6 @@
 use boa_engine::{
     job::{FutureJob, JobQueue, NativeJob},
-    Context,
+    Context, Source,
 };
 use std::{cell::RefCell, collections::VecDeque};
 
@@ -36,6 +36,10 @@ impl JobQueue for SyncJobQueue {
 
             //
             if RuntimeRequest::exists_in(context.realm()) {
+                // context
+                //     .eval(Source::from_bytes("$boa.gc.collect()"))
+                //     .unwrap();
+                // boa_gc::force_collect();
                 // println!("run_jobs: RuntimeRequest found. return from run_jobs");
                 tracing::trace!("RuntimeRequest found. return from run_jobs");
                 return;

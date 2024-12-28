@@ -206,6 +206,7 @@ impl Contractor {
 
             // instant
             instant: Instant::now(),
+            exec_history: Vec::new(),
         };
 
         request

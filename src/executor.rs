@@ -1,3 +1,4 @@
+use boa_engine::context;
 use cpu_time::ThreadTime;
 use std::ops::AddAssign;
 use std::sync::Arc;
@@ -81,6 +82,7 @@ impl Executor {
 
         while let Some(command) = self.command_receiver.blocking_recv() {
             tracing::debug!("Executor {}: start execute", self.id);
+            println!("Executor {}: start execute", self.id);
 
             match command {
                 Command::Register(request) => self.task_execute_job(request),
@@ -102,6 +104,7 @@ impl Executor {
         //     .expect("PendingManagerController is not set");
 
         let mut job = request.job;
+        job.exec_history.push(self.id);
 
         match job.status {
             JobStatus::Assigned => {
@@ -140,10 +143,14 @@ impl Executor {
                 }
             }
             JobStatus::Ready(response) => {
+                println!("Executor {}: Ready", self.id);
                 let context = match job.context {
                     Some(RuntimeContext::JavaScript(context)) => context,
                     _ => unreachable!(),
                 };
+
+                println!("Executor {}: set_context", self.id);
+                println!("Executor {}: history {:?}", self.id, job.exec_history);
 
                 self.runtime.set_context(context);
                 self.runtime.set_runtime_response(response).unwrap();
@@ -172,6 +179,7 @@ impl Executor {
             // stop measuring time
             let elapsed = start.elapsed();
             tracing::debug!("Executor {}: job elapsed {:?}", self.id, elapsed);
+            println!("Executor {}: job elapsed {:?}", self.id, elapsed);
 
             job.sub_rem_time(elapsed);
 
@@ -181,11 +189,17 @@ impl Executor {
         // self.sub_queueing_time(temp_job_rem_time);
 
         let job = match job_status {
-            JobStatus::Finished(_) => Job {
-                status: job_status,
-                context: None,
-                ..job
-            },
+            JobStatus::Finished(_) => {
+                if let Some(context) = self.runtime.get_context() {
+                    drop(context);
+                }
+
+                Job {
+                    status: job_status,
+                    context: None,
+                    ..job
+                }
+            }
             JobStatus::Pending(_) if !job.is_timeout() => {
                 let context = match self.runtime.get_context() {
                     Some(context) => context,
