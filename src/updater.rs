@@ -97,12 +97,17 @@ impl Updater {
 
         // edit
         let metrics = join_set.join_all().await;
-        let overall = match first_instant {
-            Some(instant) => end - instant,
-            None => Duration::ZERO,
+        match first_instant {
+            Some(instant) => {
+                let summary = end - instant;
+                tracing::info!("summary: {summary:?}, {} jobs", metrics.len());
+                // tracing::info!(summary, metrics.len());
+                save_csv(summary, metrics);
+            }
+            None => {
+                tracing::info!("finished 0 job");
+            }
         };
-        println!("summary: {overall:?}, {} jobs", metrics.len());
-        save_csv(overall, metrics);
     }
 
     async fn wait_for_shutdown(&self) {
