@@ -10,7 +10,7 @@ struct Item {
 #[derive(Default)]
 pub struct LocalSchedManager {
     list: Vec<Item>,
-    deadline_sum: Duration,
+    pub deadline_sum: Duration,
 }
 
 impl LocalSchedManager {
@@ -27,9 +27,15 @@ impl LocalSchedManager {
             .list
             .iter()
             .min_by_key(|item| {
-                item.local_sched.holding()
-                // tracing::debug!("Executor {}: max_queuing_time: {:?}", item.controller.id, a);
-                // println!("Executor {}: max_queuing_time: {:?}", item.controller.id, a);
+                let used_time = item.local_sched.used_time();
+
+                tracing::trace!(
+                    "Executor {}: max_queuing_time: {:?}",
+                    item.local_sched.id,
+                    used_time
+                );
+
+                used_time
             })
             .unwrap();
 
@@ -37,23 +43,24 @@ impl LocalSchedManager {
     }
 
     pub fn capacity_sum(&self) -> Duration {
-        let used_sum = self
-            .list
-            .iter()
-            .map(|item| item.local_sched.holding())
-            .sum();
-
+        let used_sum = self.used_sum();
         self.deadline_sum
             .checked_sub(used_sum)
             .unwrap_or(Duration::ZERO)
     }
 
-    // pub fn queuing_time_sum(&self) -> Duration {
-    //     self.list
-    //         .iter()
-    //         .map(|item| item.local_sched.max_queueing_time())
-    //         .sum()
-    // }
+    pub fn used_sum(&self) -> Duration {
+        self.list
+            .iter()
+            .map(|item| item.local_sched.used_time())
+            .sum()
+    }
+
+    pub async fn signal_shutdown_req(&self) {
+        for item in &self.list {
+            item.local_sched.signal_shutdown_req().await;
+        }
+    }
 }
 
 #[derive(Default)]

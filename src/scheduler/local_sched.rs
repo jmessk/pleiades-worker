@@ -2,7 +2,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{mpsc, watch, Semaphore};
 
 use crate::{
     executor, pending_manager,
@@ -16,9 +16,8 @@ use crate::{
 ///
 ///
 pub enum Policy {
-    // FastContract,
-    // BlockingPipeline(Duration),
-    CooperativePipeline,
+    Cooperative,
+    Blocking,
 }
 
 /// Scheduler
@@ -30,6 +29,8 @@ pub struct LocalSched {
     id: usize,
     command_receiver: mpsc::Receiver<Command>,
     semaphore: Arc<Semaphore>,
+
+    action_sender: watch::Sender<()>,
 
     queuing: Arc<Mutex<Duration>>,
     pending: Arc<Mutex<Duration>>,
@@ -51,12 +52,14 @@ impl LocalSched {
         executor_controller: executor::Controller,
         updater_controller: updater::Controller,
         pending_manager: pending_manager::Controller,
+        action_sender: watch::Sender<()>,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
         let queuing = Arc::new(Mutex::new(Duration::ZERO));
         let pending = Arc::new(Mutex::new(Duration::ZERO));
 
         let controller = Controller {
+            id,
             command_sender,
             queuing: queuing.clone(),
             pending: pending.clone(),
@@ -66,6 +69,7 @@ impl LocalSched {
             id,
             command_receiver,
             semaphore: Arc::new(Semaphore::new(Self::MAX_CONCURRENCY)),
+            action_sender,
             queuing,
             pending,
             local_sched: controller.clone(),
@@ -84,7 +88,8 @@ impl LocalSched {
         tracing::info!("LocalSched {}: running", self.id);
 
         match policy {
-            Policy::CooperativePipeline => self.cooperative_pipeline().await,
+            Policy::Cooperative => self.cooperative().await,
+            Policy::Blocking => self.blocking().await,
         }
 
         tracing::info!("LocalSched {}: shutdown", self.id);
@@ -151,6 +156,10 @@ impl LocalSched {
     fn sub_pending(&mut self, duration: Duration) {
         *self.pending.lock().unwrap() -= duration;
     }
+
+    async fn signal_local_action(&self) {
+        self.action_sender.send(()).unwrap();
+    }
 }
 
 impl LocalSched {
@@ -159,7 +168,9 @@ impl LocalSched {
     ///
     ///
     ///
-    async fn cooperative_pipeline(&mut self) {
+    async fn cooperative(&mut self) {
+        let mut shutdown_flag = false;
+
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Enqueue(enqueue::Request { job, prev_rem_time }) => match job.status {
@@ -169,19 +180,65 @@ impl LocalSched {
                     }
                     JobStatus::Ready(_) => {
                         self.sub_pending(job.rem_time);
+                        self.add_queuing(job.rem_time);
                         self.enqueue_execute(job).await;
                     }
                     JobStatus::Pending(_) => {
+                        self.sub_queuing(prev_rem_time);
                         self.add_pending(job.rem_time);
                         self.enqueue_pend(job).await;
+
+                        if !shutdown_flag {
+                            self.signal_local_action().await;
+                        }
                     }
                     JobStatus::Finished(_) | JobStatus::Cancelled => {
                         self.sub_queuing(prev_rem_time);
                         self.updater.update_job(job).await;
+
+                        if !shutdown_flag {
+                            self.signal_local_action().await;
+                        }
                     }
                     _ => unreachable!(),
                 },
-                Command::ShutdownReq => self.schedule_shutdown().await,
+                Command::ShutdownReq => {
+                    self.schedule_shutdown().await;
+                    shutdown_flag = true;
+                }
+                Command::ShutdownDone => break,
+            }
+        }
+    }
+
+    async fn blocking(&mut self) {
+        let mut shutdown_flag = false;
+
+        while let Some(command) = self.command_receiver.recv().await {
+            match command {
+                Command::Enqueue(enqueue::Request { job, prev_rem_time }) => match job.status {
+                    JobStatus::Assigned => {
+                        self.add_queuing(job.rem_time);
+                        self.enqueue_execute(job).await;
+                    }
+                    JobStatus::Ready(_) => {}
+                    JobStatus::Pending(_) => {
+                        
+                    }
+                    JobStatus::Finished(_) | JobStatus::Cancelled => {
+                        self.sub_queuing(prev_rem_time);
+                        self.updater.update_job(job).await;
+
+                        if !shutdown_flag {
+                            self.signal_local_action().await;
+                        }
+                    }
+                    _ => unreachable!(),
+                },
+                Command::ShutdownReq => {
+                    self.schedule_shutdown().await;
+                    shutdown_flag = true;
+                }
                 Command::ShutdownDone => break,
             }
         }
@@ -195,6 +252,7 @@ impl LocalSched {
 ///
 #[derive(Clone)]
 pub struct Controller {
+    pub id: usize,
     command_sender: mpsc::Sender<Command>,
     queuing: Arc<Mutex<Duration>>,
     pending: Arc<Mutex<Duration>>,
@@ -232,7 +290,7 @@ impl Controller {
         *self.pending.lock().unwrap()
     }
 
-    pub fn holding(&self) -> Duration {
+    pub fn used_time(&self) -> Duration {
         self.queuing() + self.pending()
     }
 }

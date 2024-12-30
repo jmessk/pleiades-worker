@@ -1,18 +1,7 @@
 use std::{sync::Arc, time::Duration};
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{mpsc, watch, Semaphore};
 
 use crate::{contractor, helper::LocalSchedManager, pleiades_type::Job, WorkerIdManager};
-
-/// Policy
-///
-///
-///
-///
-pub enum Policy {
-    // FastContract,
-    // BlockingPipeline(Duration),
-    CooperativePipeline,
-}
 
 /// Scheduler
 ///
@@ -22,6 +11,8 @@ pub enum Policy {
 pub struct GlobalSched {
     command_receiver: mpsc::Receiver<Command>,
     semaphore: Arc<Semaphore>,
+
+    action_receiver: watch::Receiver<()>,
 
     contracting: Duration,
 
@@ -42,6 +33,7 @@ impl GlobalSched {
         contractor_controller: contractor::Controller,
         local_sched_manager: LocalSchedManager,
         worker_id_manager: WorkerIdManager,
+        action_receiver: watch::Receiver<()>,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
 
@@ -50,6 +42,7 @@ impl GlobalSched {
         let global_sched = Self {
             command_receiver,
             semaphore: Arc::new(Semaphore::new(Self::MAX_CONCURRENCY)),
+            action_receiver,
             contracting: Duration::ZERO,
             global_sched: controller.clone(),
             contractor: contractor_controller,
@@ -66,9 +59,18 @@ impl GlobalSched {
     pub async fn run(&mut self) {
         tracing::info!("running");
 
-        self.cooperative_pipeline().await;
+        let global_sched = self.global_sched.clone();
+        tokio::spawn(Self::notifier(self.action_receiver.clone(), global_sched));
+
+        self.sched_loop().await;
 
         tracing::info!("shutdown");
+    }
+
+    async fn notifier(mut notify_receiver: watch::Receiver<()>, global_sched: Controller) {
+        while notify_receiver.changed().await.is_ok() {
+            global_sched.signal_local_action().await;
+        }
     }
 
     /// wait_for_shutdown
@@ -112,10 +114,18 @@ impl GlobalSched {
     }
 
     async fn contract_up_to_deadline(&mut self, job_deadline: Duration, worker_id: &str) {
-        let capacity = self.local_sched_manager.capacity_sum();
+        let max = self.local_sched_manager.deadline_sum;
+        let local_sched_used = self.local_sched_manager.used_sum();
+        let contracting = self.contracting;
+
+        let capacity = max.checked_sub(local_sched_used + contracting).unwrap();
         let available_jobs = capacity.div_duration_f32(job_deadline) as usize;
 
-        tracing::debug!("capacity: {capacity:?}, available_jobs: {available_jobs}",);
+        tracing::debug!(
+            "capacity: {:?}, available_jobs: {}",
+            capacity,
+            available_jobs
+        );
 
         for _ in 0..available_jobs {
             self.add_contracting(job_deadline);
@@ -138,8 +148,7 @@ impl GlobalSched {
     ///
     ///
     ///
-    async fn cooperative_pipeline(&mut self) {
-        let mut shutdown_flag = false;
+    async fn sched_loop(&mut self) {
         let (default_worker_id, default_job_deadline) = self.worker_id_manager.get_default();
 
         self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
@@ -148,20 +157,23 @@ impl GlobalSched {
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Contracted(job) => {
-                    self.local_sched_manager.shortest().assign(job).await;
+                    let local_sched = self.local_sched_manager.shortest();
+                    local_sched.assign(job).await;
+                    tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
                     self.sub_contracting(default_job_deadline);
                 }
                 Command::NoJob => self.sub_contracting(default_job_deadline),
+                Command::LocalAction => {
+                    self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
+                        .await
+                }
                 Command::ShutdownReq => {
-                    shutdown_flag = true;
                     self.schedule_shutdown().await;
                 }
-                Command::ShutdownDone => break,
-            }
-
-            if !shutdown_flag {
-                self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
-                    .await;
+                Command::ShutdownDone => {
+                    self.local_sched_manager.signal_shutdown_req().await;
+                    break;
+                }
             }
         }
     }
@@ -181,23 +193,35 @@ impl Controller {
     /// enqueue_ready
     ///
     pub async fn enqueue_job(&self, job: Job) {
-        let request = Command::Contracted(job);
-        self.command_sender.send(request).await.unwrap();
+        self.command_sender
+            .send(Command::Contracted(job))
+            .await
+            .unwrap();
     }
 
     pub async fn signal_no_job(&self) {
-        let request = Command::NoJob;
-        self.command_sender.send(request).await.unwrap();
+        self.command_sender.send(Command::NoJob).await.unwrap();
+    }
+
+    pub async fn signal_local_action(&self) {
+        self.command_sender
+            .send(Command::LocalAction)
+            .await
+            .unwrap();
     }
 
     pub async fn signal_shutdown_req(&self) {
-        let request = Command::ShutdownReq;
-        self.command_sender.send(request).await.unwrap();
+        self.command_sender
+            .send(Command::ShutdownReq)
+            .await
+            .unwrap();
     }
 
     pub async fn signal_shutdown_done(&self) {
-        let request = Command::ShutdownDone;
-        self.command_sender.send(request).await.unwrap();
+        self.command_sender
+            .send(Command::ShutdownDone)
+            .await
+            .unwrap();
     }
 }
 
@@ -205,6 +229,7 @@ impl Controller {
 pub enum Command {
     Contracted(Job),
     NoJob,
+    LocalAction,
     ShutdownReq,
     ShutdownDone,
 }

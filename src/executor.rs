@@ -208,6 +208,7 @@ impl Controller {
             response_sender,
             job,
         });
+
         self.command_sender.send(request).await.unwrap();
 
         register::Handle { response_receiver }

@@ -107,6 +107,8 @@ async fn worker(config: WorkerConfig) {
     // Initialize LocalSched and Executor
     //
     let mut local_sched_manager_builder = LocalSchedManager::builder();
+    let (notify_sender, notify_receiver) = tokio::sync::watch::channel(());
+
     (0..config.num_executors).for_each(|id| {
         let (mut executor, executor_controller) = Executor::new(id);
         let (mut local_sched, local_sched_controller) = LocalSched::new(
@@ -114,6 +116,7 @@ async fn worker(config: WorkerConfig) {
             executor_controller,
             updater_controller.clone(),
             pending_manager_controller.clone(),
+            notify_sender.clone(),
         );
 
         local_sched_manager_builder.insert(local_sched_controller, config.exec_deadline);
@@ -123,7 +126,7 @@ async fn worker(config: WorkerConfig) {
         });
         join_set.spawn(async move {
             local_sched
-                .run(local_sched::Policy::CooperativePipeline)
+                .run(local_sched::Policy::Cooperative)
                 .await;
         });
     });
@@ -138,6 +141,7 @@ async fn worker(config: WorkerConfig) {
         contractor_controller,
         local_sched_manager,
         WorkerIdManager::new(client, config.job_deadline).await,
+        notify_receiver,
     );
 
     join_set.spawn(async move {
@@ -146,6 +150,9 @@ async fn worker(config: WorkerConfig) {
 
     tokio::signal::ctrl_c().await.unwrap();
     global_sched_controller.signal_shutdown_req().await;
+
+    drop(updater_controller);
+    drop(pending_manager_controller);
 
     join_set.join_all().await;
 }
