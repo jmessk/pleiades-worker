@@ -60,7 +60,7 @@ pub struct Job {
     pub lambda: Box<Lambda>,
     pub input: Box<Blob>,
 
-    pub instant: Instant,
+    pub contracted_at: Instant,
 }
 
 impl Default for Job {
@@ -74,7 +74,7 @@ impl Default for Job {
             lambda: Box::new(Lambda::default()),
             input: Box::new(Blob::default()),
 
-            instant: Instant::now(),
+            contracted_at: Instant::now(),
         }
     }
 }

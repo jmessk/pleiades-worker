@@ -26,7 +26,7 @@ impl Fetcher {
     /// new
     ///
     pub fn new(client: Arc<pleiades_api::Client>) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(64);
+        let (command_sender, command_receiver) = mpsc::channel(16);
 
         let fetcher = Self {
             client,

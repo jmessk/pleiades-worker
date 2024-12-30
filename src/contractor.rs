@@ -42,7 +42,7 @@ impl Contractor {
         max_concurrency: usize,
         job_deadline: Duration,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(8);
+        let (command_sender, command_receiver) = mpsc::channel(16);
 
         let contractor = Self {
             client,
@@ -203,7 +203,7 @@ impl Contractor {
             input: Box::new(input.expect("input")),
 
             // instant
-            instant: Instant::now(),
+            contracted_at: Instant::now(),
         };
 
         request

@@ -30,7 +30,7 @@ impl DataManager {
     ///
     ///
     pub fn new(fetcher_controller: fetcher::Controller) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(64);
+        let (command_sender, command_receiver) = mpsc::channel(16);
 
         let data_manager = Self {
             fetcher_controller,

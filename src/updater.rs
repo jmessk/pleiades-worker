@@ -38,7 +38,7 @@ impl Updater {
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(64);
+        let (command_sender, command_receiver) = mpsc::channel(16);
 
         let updater = Self {
             client,
@@ -75,7 +75,7 @@ impl Updater {
             match command {
                 Command::Update(request) => {
                     if first_instant.is_none() {
-                        first_instant = Some(request.job.instant);
+                        first_instant = Some(request.job.contracted_at);
                     }
 
                     end = Instant::now();
@@ -176,7 +176,7 @@ impl Updater {
     ) -> (String, String, &'static str, Duration) {
         match request.job.status {
             JobStatus::Finished(output) => {
-                let elapsed = request.job.instant.elapsed();
+                let elapsed = request.job.contracted_at.elapsed();
                 let output = output.unwrap_or(bytes::Bytes::new());
 
                 let post_handle = data_manager_controller.post_blob(output).await;
@@ -203,7 +203,7 @@ impl Updater {
                 )
             }
             JobStatus::Cancelled => {
-                let elapsed = request.job.instant.elapsed();
+                let elapsed = request.job.contracted_at.elapsed();
 
                 let update_request = pleiades_api::api::job::update::Request::builder()
                     .job_id(&request.job.id)

@@ -1,8 +1,9 @@
 use clap::Parser;
 use pleiades_worker::{
     executor::Executor,
-    scheduler::{Controllers, Policy},
-    Contractor, DataManager, Fetcher, PendingManager, LocalScheduler, Updater, WorkerIdManager,
+    helper::LocalSchedManager,
+    scheduler::{local_sched, GlobalSched, LocalSched},
+    Contractor, DataManager, Fetcher, PendingManager, Updater, WorkerIdManager,
 };
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
@@ -103,45 +104,48 @@ async fn worker(config: WorkerConfig) {
     //
     // /////
 
-    // Initialize executor and scheduler
+    // Initialize LocalSched and Executor
     //
-    let controllers = Controllers {
-        contractor: contractor_controller,
-        updater: updater_controller,
-        pending: pending_manager_controller,
-    };
-    let worker_id_manager = WorkerIdManager::new(client, config.job_deadline).await;
+    let mut local_sched_manager_builder = LocalSchedManager::builder();
+    (0..config.num_executors).for_each(|id| {
+        let (mut executor, executor_controller) = Executor::new(id);
+        let (mut local_sched, local_sched_controller) = LocalSched::new(
+            id,
+            executor_controller,
+            updater_controller.clone(),
+            pending_manager_controller.clone(),
+        );
 
-    let sched_controller_list = (0..config.num_executors)
-        .map(|i| {
-            let (mut executor, exec_controller) = Executor::new(i);
-            let (mut scheduler, sched_controller) = LocalScheduler::new(
-                i,
-                controllers.clone(),
-                exec_controller,
-                worker_id_manager.clone(),
-                config.exec_deadline,
-            );
+        local_sched_manager_builder.insert(local_sched_controller, config.exec_deadline);
 
-            join_set.spawn_blocking(move || executor.run());
-            join_set.spawn(async move {
-                scheduler.run(Policy::CooperativePipeline).await;
-            });
+        join_set.spawn_blocking(move || {
+            executor.run();
+        });
+        join_set.spawn(async move {
+            local_sched
+                .run(local_sched::Policy::CooperativePipeline)
+                .await;
+        });
+    });
 
-            sched_controller
-        })
-        .collect::<Vec<_>>();
+    let local_sched_manager = local_sched_manager_builder.build().unwrap();
     //
     // /////
 
-    drop(controllers);
+    // Initialize GlobalSched
+    //
+    let (mut global_sched, global_sched_controller) = GlobalSched::new(
+        contractor_controller,
+        local_sched_manager,
+        WorkerIdManager::new(client, config.job_deadline).await,
+    );
+
+    join_set.spawn(async move {
+        global_sched.run().await;
+    });
 
     tokio::signal::ctrl_c().await.unwrap();
-    sched_controller_list.into_iter().for_each(|controller| {
-        join_set.spawn(async move {
-            controller.signal_shutdown_req().await;
-        });
-    });
+    global_sched_controller.signal_shutdown_req().await;
 
     join_set.join_all().await;
 }
