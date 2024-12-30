@@ -32,10 +32,10 @@ pub struct LocalSched {
 
     action_sender: watch::Sender<()>,
 
-    queuing: Arc<Mutex<Duration>>,
-    pending: Arc<Mutex<Duration>>,
+    _queuing: Arc<Mutex<Duration>>,
+    _pending: Arc<Mutex<Duration>>,
 
-    local_sched: Controller,
+    controller: Controller,
     executor: executor::Controller,
     updater: updater::Controller,
     pending_manager: pending_manager::Controller,
@@ -70,9 +70,9 @@ impl LocalSched {
             command_receiver,
             semaphore: Arc::new(Semaphore::new(Self::MAX_CONCURRENCY)),
             action_sender,
-            queuing,
-            pending,
-            local_sched: controller.clone(),
+            _queuing: queuing,
+            _pending: pending,
+            controller: controller.clone(),
             executor: executor_controller,
             updater: updater_controller,
             pending_manager,
@@ -99,7 +99,7 @@ impl LocalSched {
     ///
     ///
     async fn schedule_shutdown(&self) {
-        let local_sched = self.local_sched.clone();
+        let local_sched = self.controller.clone();
         let semaphore = self.semaphore.clone();
 
         tokio::spawn(async move {
@@ -113,7 +113,7 @@ impl LocalSched {
     async fn enqueue_execute(&self, job: Job) {
         let prev_rem_time = job.rem_time;
         let handle = self.executor.enqueue(job).await;
-        let local_sched = self.local_sched.clone();
+        let local_sched = self.controller.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
         let id = self.id;
@@ -130,7 +130,7 @@ impl LocalSched {
     async fn enqueue_pend(&self, job: Job) {
         let prev_rem_time = job.rem_time;
         let handle = self.pending_manager.register(job).await;
-        let local_sched = self.local_sched.clone();
+        let local_sched = self.controller.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
         tokio::spawn(async move {
@@ -139,22 +139,6 @@ impl LocalSched {
 
             drop(permit);
         });
-    }
-
-    fn add_queuing(&mut self, duration: Duration) {
-        *self.queuing.lock().unwrap() += duration;
-    }
-
-    fn sub_queuing(&mut self, duration: Duration) {
-        *self.queuing.lock().unwrap() -= duration;
-    }
-
-    fn add_pending(&mut self, duration: Duration) {
-        *self.pending.lock().unwrap() += duration;
-    }
-
-    fn sub_pending(&mut self, duration: Duration) {
-        *self.pending.lock().unwrap() -= duration;
     }
 
     async fn signal_local_action(&self) {
@@ -175,17 +159,17 @@ impl LocalSched {
             match command {
                 Command::Enqueue(enqueue::Request { job, prev_rem_time }) => match job.status {
                     JobStatus::Assigned => {
-                        self.add_queuing(job.rem_time);
+                        // don't need to add_queuing
                         self.enqueue_execute(job).await;
                     }
                     JobStatus::Ready(_) => {
-                        self.sub_pending(job.rem_time);
-                        self.add_queuing(job.rem_time);
+                        self.controller.sub_pending(prev_rem_time);
+                        self.controller.add_queuing(job.rem_time);
                         self.enqueue_execute(job).await;
                     }
                     JobStatus::Pending(_) => {
-                        self.sub_queuing(prev_rem_time);
-                        self.add_pending(job.rem_time);
+                        self.controller.sub_queuing(prev_rem_time);
+                        self.controller.add_pending(job.rem_time);
                         self.enqueue_pend(job).await;
 
                         if !shutdown_flag {
@@ -193,7 +177,7 @@ impl LocalSched {
                         }
                     }
                     JobStatus::Finished(_) | JobStatus::Cancelled => {
-                        self.sub_queuing(prev_rem_time);
+                        self.controller.sub_queuing(prev_rem_time);
                         self.updater.update_job(job).await;
 
                         if !shutdown_flag {
@@ -216,25 +200,37 @@ impl LocalSched {
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
-                Command::Enqueue(enqueue::Request { job, prev_rem_time }) => match job.status {
-                    JobStatus::Assigned => {
-                        self.add_queuing(job.rem_time);
-                        self.enqueue_execute(job).await;
-                    }
-                    JobStatus::Ready(_) => {}
-                    JobStatus::Pending(_) => {
-                        
-                    }
-                    JobStatus::Finished(_) | JobStatus::Cancelled => {
-                        self.sub_queuing(prev_rem_time);
-                        self.updater.update_job(job).await;
+                Command::Enqueue(enqueue::Request { job, prev_rem_time }) => {
+                    let mut job = job;
 
-                        if !shutdown_flag {
-                            self.signal_local_action().await;
+                    loop {
+                        job = match job.status {
+                            JobStatus::Assigned | JobStatus::Ready(_) => {
+                                let handle = self.executor.enqueue(job).await;
+                                let response = handle.response_receiver.await.unwrap();
+
+                                response.job
+                            }
+                            JobStatus::Pending(_) => {
+                                let handle = self.pending_manager.register(job).await;
+                                let response = handle.response_receiver.await.unwrap();
+
+                                response.job
+                            }
+                            JobStatus::Finished(_) | JobStatus::Cancelled => {
+                                self.controller.sub_queuing(prev_rem_time);
+                                self.updater.update_job(job).await;
+
+                                if !shutdown_flag {
+                                    self.signal_local_action().await;
+                                }
+
+                                break;
+                            }
+                            _ => unreachable!(),
                         }
                     }
-                    _ => unreachable!(),
-                },
+                }
                 Command::ShutdownReq => {
                     self.schedule_shutdown().await;
                     shutdown_flag = true;
@@ -259,11 +255,13 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub async fn assign(&self, job: Job) {
-        let request = Command::Enqueue(enqueue::Request {
-            job,
-            prev_rem_time: Duration::ZERO,
-        });
+    pub async fn assign(&mut self, job: Job) {
+        // this is necessary to avoid double counting
+        self.add_queuing(job.rem_time);
+
+        let prev_rem_time = job.rem_time;
+        let request = Command::Enqueue(enqueue::Request { job, prev_rem_time });
+
         self.command_sender.send(request).await.unwrap();
     }
 
@@ -286,8 +284,24 @@ impl Controller {
         *self.queuing.lock().unwrap()
     }
 
+    fn add_queuing(&mut self, duration: Duration) {
+        *self.queuing.lock().unwrap() += duration;
+    }
+
+    fn sub_queuing(&mut self, duration: Duration) {
+        *self.queuing.lock().unwrap() -= duration;
+    }
+
     pub fn pending(&self) -> Duration {
         *self.pending.lock().unwrap()
+    }
+
+    fn add_pending(&mut self, duration: Duration) {
+        *self.pending.lock().unwrap() += duration;
+    }
+
+    fn sub_pending(&mut self, duration: Duration) {
+        *self.pending.lock().unwrap() -= duration;
     }
 
     pub fn used_time(&self) -> Duration {

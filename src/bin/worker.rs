@@ -124,9 +124,15 @@ async fn worker(config: WorkerConfig) {
         join_set.spawn_blocking(move || {
             executor.run();
         });
+
+        let policy = config.policy.clone();
         join_set.spawn(async move {
             local_sched
-                .run(local_sched::Policy::Cooperative)
+                .run(match policy.as_str() {
+                    "cooperative" => local_sched::Policy::Cooperative,
+                    "blocking" => local_sched::Policy::Blocking,
+                    _ => panic!("invalid policy"),
+                })
                 .await;
         });
     });

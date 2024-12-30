@@ -22,10 +22,10 @@ impl LocalSchedManager {
         self.list.len()
     }
 
-    pub fn shortest(&self) -> &local_sched::Controller {
+    pub fn shortest(&mut self) -> &mut local_sched::Controller {
         let item = self
             .list
-            .iter()
+            .iter_mut()
             .min_by_key(|item| {
                 let used_time = item.local_sched.used_time();
 
@@ -39,7 +39,7 @@ impl LocalSchedManager {
             })
             .unwrap();
 
-        &item.local_sched
+        &mut item.local_sched
     }
 
     pub fn capacity_sum(&self) -> Duration {

@@ -60,15 +60,21 @@ impl GlobalSched {
         tracing::info!("running");
 
         let global_sched = self.global_sched.clone();
-        tokio::spawn(Self::notifier(self.action_receiver.clone(), global_sched));
+        tokio::spawn(Self::local_action_receiver(
+            self.action_receiver.clone(),
+            global_sched,
+        ));
 
         self.sched_loop().await;
 
         tracing::info!("shutdown");
     }
 
-    async fn notifier(mut notify_receiver: watch::Receiver<()>, global_sched: Controller) {
-        while notify_receiver.changed().await.is_ok() {
+    async fn local_action_receiver(
+        mut action_receiver: watch::Receiver<()>,
+        global_sched: Controller,
+    ) {
+        while action_receiver.changed().await.is_ok() {
             global_sched.signal_local_action().await;
         }
     }
