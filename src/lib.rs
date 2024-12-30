@@ -17,5 +17,5 @@ pub use fetcher::Fetcher;
 // pub use _scheduler::GlobalScheduler;
 pub use helper::{ExecutorManager, WorkerIdManager};
 pub use pending_manager::PendingManager;
-pub use scheduler::Scheduler;
+pub use scheduler::LocalScheduler;
 pub use updater::Updater;

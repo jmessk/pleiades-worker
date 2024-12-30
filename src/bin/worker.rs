@@ -2,7 +2,7 @@ use clap::Parser;
 use pleiades_worker::{
     executor::Executor,
     scheduler::{Controllers, Policy},
-    Contractor, DataManager, Fetcher, PendingManager, Scheduler, Updater, WorkerIdManager,
+    Contractor, DataManager, Fetcher, PendingManager, LocalScheduler, Updater, WorkerIdManager,
 };
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
@@ -115,7 +115,7 @@ async fn worker(config: WorkerConfig) {
     let sched_controller_list = (0..config.num_executors)
         .map(|i| {
             let (mut executor, exec_controller) = Executor::new(i);
-            let (mut scheduler, sched_controller) = Scheduler::new(
+            let (mut scheduler, sched_controller) = LocalScheduler::new(
                 i,
                 controllers.clone(),
                 exec_controller,

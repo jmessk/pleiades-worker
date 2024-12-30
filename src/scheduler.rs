@@ -37,7 +37,7 @@ pub enum Policy {
 ///
 ///
 ///
-pub struct Scheduler {
+pub struct LocalScheduler {
     id: usize,
     command_receiver: mpsc::Receiver<Command>,
     semaphore: Arc<Semaphore>,
@@ -52,7 +52,7 @@ pub struct Scheduler {
     worker_id_manager: WorkerIdManager,
 }
 
-impl Scheduler {
+impl LocalScheduler {
     const MAX_CONCURRENCY: usize = 128;
     /// new
     ///
@@ -213,7 +213,7 @@ impl Scheduler {
     }
 }
 
-impl Scheduler {
+impl LocalScheduler {
     /// cooperative_pipeline
     ///
     ///
