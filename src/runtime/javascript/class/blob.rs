@@ -86,18 +86,11 @@ impl Blob {
     }
 
     pub fn post(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-        let url = args
-            .first()
-            .unwrap()
-            .to_string(context)
-            .unwrap()
-            .to_std_string_escaped();
-
-        let body_obj = args.get(1).unwrap().to_object(context).unwrap();
-        let body: Bytes = JsUint8Array::from_object(body_obj)?.iter(context).collect();
+        let data_obj = args.first().unwrap().to_object(context).unwrap();
+        let data: Bytes = JsUint8Array::from_object(data_obj)?.iter(context).collect();
 
         // Create a request object and insert it into the context
-        RuntimeRequest::Http(http::Request::Post { url, body }).insert(context.realm());
+        RuntimeRequest::Blob(blob::Request::Post(data)).insert(context.realm());
         tracing::trace!("request inserted into context");
 
         let (promise, resolver) = JsPromise::new_pending(context);
@@ -108,10 +101,11 @@ impl Blob {
             let response = RuntimeResponse::extract(context.realm());
 
             let result = match response {
-                Some(RuntimeResponse::Http(http::Response::Get(Some(body)))) => {
-                    tracing::trace!("response found: {:?}", body.len());
-                    let array = JsUint8Array::from_iter(body, context)?;
-                    JsValue::from(array)
+                Some(RuntimeResponse::Blob(blob::Response::Post(blob))) => {
+                    tracing::trace!("response found: blob ID: {}", blob.id);
+                    // let array = JsUint8Array::from_iter(body, context)?;
+                    // JsValue::from(array)
+                    JsValue::from(js_string!(blob.id))
                 }
                 _ => {
                     tracing::trace!("response not found");

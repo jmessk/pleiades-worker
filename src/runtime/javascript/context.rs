@@ -21,7 +21,7 @@ unsafe impl Send for JsContext {}
 
 impl runtime::Context for JsContext {
     fn init() -> Self {
-        let mut context = Self::init_context();
+        let mut context = Self::init_inner();
 
         // builtin
         Self::register_builtin_properties(&mut context);
@@ -36,7 +36,7 @@ impl runtime::Context for JsContext {
 }
 
 impl JsContext {
-    fn init_context() -> Context {
+    fn init_inner() -> Context {
         Context::builder()
             // .job_queue(Rc::new(job_queue::TokioJobQueue::new()))
             .job_queue(Rc::new(job_queue::SyncJobQueue::new()))
@@ -98,9 +98,9 @@ impl JsContext {
 
         context
             .register_global_builtin_callable(
-                js_string!("syncSleep"),
+                js_string!("blockingSleep"),
                 1,
-                NativeFunction::from_fn_ptr(function::sync_sleep),
+                NativeFunction::from_fn_ptr(function::blocking_sleep),
             )
             .unwrap();
 

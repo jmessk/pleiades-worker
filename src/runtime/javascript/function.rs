@@ -93,7 +93,7 @@ pub fn sleep(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
     Ok(JsValue::from(promise))
 }
 
-pub fn sync_sleep(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub fn blocking_sleep(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ms = match args.first() {
         Some(ms) => ms.to_number(context)? as u64,
         None => 0,

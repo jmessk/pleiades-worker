@@ -2,7 +2,7 @@ async function fetch(input) {
     // console.log("sleep.js");
 
     // await sleep(200);
-    syncSleep(500);
+    blockingSleep(500);
 
     return "test_output";
 }
