@@ -239,13 +239,13 @@ fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Durat
 
     let file_name = format!(
         "metrics/{}.csv",
-        chrono::Local::now().format("%Y_%m%d_%H%M%S")
+        chrono::Local::now().format("%Y-%m%d-%H%M%S")
     );
     let mut file = File::create(&file_name).unwrap();
 
     file.write_all(format!("summary: {}\n", elapsed.as_millis()).as_bytes())
         .unwrap();
-    file.write_all(b"job_id,runtime,elapsed_ms\n").unwrap();
+    file.write_all(b"id,runtime,status,elapsed_ms\n").unwrap();
 
     metrics
         .iter()

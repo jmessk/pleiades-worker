@@ -13,7 +13,7 @@ use crate::runtime::{RuntimeRequest, RuntimeResponse};
 
 #[derive(Debug)]
 pub struct JsContext {
-    context: Box<boa_engine::Context>,
+    context: Box<Context>,
 }
 
 unsafe impl Sync for JsContext {}

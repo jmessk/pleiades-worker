@@ -72,7 +72,7 @@ impl Runtime for JsRuntime {
         }
     }
 
-    // fn executea(&mut self, job: &mut Job) {
+    // fn execute(&mut self, job: &mut Job) {
     //     let status = job.status;
 
     //     // set job status to running
