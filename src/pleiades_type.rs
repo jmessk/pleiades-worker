@@ -54,13 +54,12 @@ impl Default for Lambda {
 pub struct Job {
     pub status: JobStatus,
     pub rem_time: Duration,
+    pub contracted_at: Instant,
     pub context: Option<RuntimeContext>,
 
     pub id: String,
     pub lambda: Box<Lambda>,
     pub input: Box<Blob>,
-
-    pub contracted_at: Instant,
 }
 
 impl Default for Job {
