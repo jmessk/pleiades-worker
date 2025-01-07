@@ -5,13 +5,15 @@ use pleiades_worker::{
     scheduler::{local_sched, GlobalSched, LocalSched},
     Contractor, DataManager, Fetcher, PendingManager, Updater, WorkerIdManager,
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{atomic::AtomicUsize, Arc},
+    time::Duration,
+};
 use tokio::task::JoinSet;
 
-// #[tokio::main(flavor = "current_thread")]
-#[tokio::main(flavor = "multi_thread")]
-// fn main() {
-async fn main() {
+// #[tokio::main(flavor = "multi_thread")]
+// async fn main() {
+fn main() {
     // Load .env file
     //
     dotenvy::dotenv().unwrap();
@@ -41,29 +43,38 @@ async fn main() {
 
     // Initialize tokio runtime and set core affinity
     //
-    // let cpu_list = core_affinity::get_core_ids().unwrap();
+    let cpu_list = core_affinity::get_core_ids().unwrap();
+    let num_cores = cpu_list.len();
+    let num_tokio_workers = num_cores - config.num_executors;
+    let num_executors = config.num_executors;
 
-    // println!("cores: {}", cpu_list.len());
+    println!("num_cores: {num_cores}");
+    println!("num_tokio_workers: {num_tokio_workers}");
+    println!("num_executors: {num_executors}");
 
-    // let runtime = tokio::runtime::Builder::new_current_thread()
-    //     .worker_threads(cpu_list.len() - config.num_executors)
-    //     .max_blocking_threads(config.num_executors)
-    //     .on_thread_start(|| {
-    //         static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
-    //         let id = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    //         core_affinity::set_for_current(CoreId { id });
-    //     })
-    //     .enable_all()
-    //     .build()
-    //     .unwrap();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(num_tokio_workers)
+        .max_blocking_threads(num_executors)
+        .on_thread_start(move || {
+            static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
+            let id = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % num_cores;
+            core_affinity::set_for_current(core_affinity::CoreId { id });
+            println!("thread started: {}", id);
+        })
+        .enable_all()
+        .build()
+        .unwrap();
+    //
+    // /////
 
-    // runtime.block_on(worker(config));
-    worker(config).await;
+    runtime.block_on(worker(config));
+    // worker(config).await;
 }
 
 async fn worker(config: WorkerConfig) {
     let pleiades_url = std::env::var("PLEIADES_URL").unwrap();
     let client = Arc::new(pleiades_api::Client::try_new(&pleiades_url).unwrap());
+    println!("{:?}", client.ping().await.unwrap());
 
     // Initialize components
     //
@@ -143,10 +154,11 @@ async fn worker(config: WorkerConfig) {
 
     // Initialize GlobalSched
     //
+    let worker_id_manager = WorkerIdManager::new(client, config.job_deadline).await;
     let (mut global_sched, global_sched_controller) = GlobalSched::new(
         contractor_controller,
         local_sched_manager,
-        WorkerIdManager::new(client, config.job_deadline).await,
+        worker_id_manager,
         notify_receiver,
     );
 
