@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{io::Write as _, time::Duration};
 
 use boa_engine::{
     job::NativeJob,
@@ -93,7 +93,11 @@ pub fn sleep(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
     Ok(JsValue::from(promise))
 }
 
-pub fn blocking_sleep(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub fn blocking_sleep(
+    _this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ms = match args.first() {
         Some(ms) => ms.to_number(context)? as u64,
         None => 0,
@@ -121,4 +125,33 @@ pub fn yield_now(_this: &JsValue, _args: &[JsValue], context: &mut Context) -> J
     context.job_queue().enqueue_promise_job(job, context);
 
     Ok(JsValue::from(promise))
+}
+
+pub fn compress(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let input_obj = args.first().unwrap().to_object(context).unwrap();
+    let data = JsUint8Array::from_object(input_obj)?
+        .iter(context)
+        .collect::<Bytes>();
+
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+    let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
+
+    e.write_all(&data).unwrap();
+    let compressed = e.finish().unwrap();
+
+    let array = JsUint8Array::from_iter(compressed, context)?;
+    Ok(JsValue::from(array))
+}
+
+pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let input_obj = args.first().unwrap().to_object(context).unwrap();
+    let data = JsUint8Array::from_object(input_obj)?
+        .iter(context)
+        .collect::<Bytes>();
+
+    // create zip::ZipArchive from data
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data)).unwrap();
+    
+    
 }
