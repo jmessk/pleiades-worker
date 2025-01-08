@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 use tokio::task::JoinSet;
+// use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt};
 
 // #[tokio::main(flavor = "multi_thread")]
 // async fn main() {
@@ -35,14 +36,19 @@ fn main() {
     // Initialize tracing
     //
     tracing_subscriber::fmt()
-        // .with_env_filter(tracing_subscriber::EnvFilter::new("pleiades_worker=info"))
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
+    // tracing_subscriber::registry()
+    //     .with(tracing_subscriber::EnvFilter::from_default_env())
+    //     .with(tracing_subscriber::fmt::layer())
+    //     .with(console_subscriber::spawn())
+    //     .try_init()
+    //     .unwrap();
+
+    // console_subscriber::init();
     //
     // /////
 
-    // Initialize tokio runtime and set core affinity
-    //
     let cpu_list = core_affinity::get_core_ids().unwrap();
     let num_cores = cpu_list.len();
     let num_tokio_workers = num_cores - config.num_executors;
@@ -53,19 +59,25 @@ fn main() {
     println!("num_executors: {num_executors}");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
         .worker_threads(num_tokio_workers)
-        .max_blocking_threads(num_executors)
+        // .max_blocking_threads(num_executors)
         .on_thread_start(move || {
             static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
-            let id = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % num_cores;
-            core_affinity::set_for_current(core_affinity::CoreId { id });
-            println!("thread started: {}", id);
+            let count = CORE_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+            let id = num_cores
+                - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % num_cores
+                - 1;
+
+            // println!("count: {count}, id: {id}");
+
+            if count < num_cores {
+                core_affinity::set_for_current(core_affinity::CoreId { id });
+                println!("thread is set to core {}", id);
+            }
         })
-        .enable_all()
         .build()
         .unwrap();
-    //
-    // /////
 
     runtime.block_on(worker(config));
     // worker(config).await;

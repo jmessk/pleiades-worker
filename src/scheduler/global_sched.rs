@@ -127,13 +127,11 @@ impl GlobalSched {
         let capacity = max.checked_sub(local_sched_used + contracting).unwrap();
         let available_jobs = capacity.div_duration_f32(job_deadline) as usize;
 
-        tracing::debug!(
-            "capacity: {:?}, available_jobs: {}",
-            capacity,
-            available_jobs
-        );
+        let max = std::cmp::min(available_jobs, self.contractor.max_concurrency);
 
-        for _ in 0..available_jobs {
+        tracing::debug!("capacity: {capacity:?}, available_jobs: {available_jobs}, max: {max}",);
+
+        for _ in 0..max {
             self.add_contracting(job_deadline);
             self.schedule_contract(worker_id).await;
         }

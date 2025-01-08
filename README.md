@@ -9,7 +9,7 @@
   - `--iteration`: number of iterations. default: 10
 
 ```bash
-./run_generator.bash -s ./examples/script/hello.js -i 100
+./run_generator.bash -s ./examples/script/hello.js -i 10
 # cargo run --release --example job_generator -- --script ./examples/script/hello.js --iteration 100
 ```
 

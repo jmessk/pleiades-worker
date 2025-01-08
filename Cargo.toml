@@ -28,6 +28,11 @@ core_affinity = "0.8.1"
 zip = "2.2.2"
 image = "0.25.5"
 flate2 = "1.0.35"
+tokio-console = "0.1.13"
+console-subscriber = "0.4.1"
 
 [dev-dependencies]
 criterion = "0.5.1"
+
+[build]
+rustflags = ["--cfg", "tokio_unstable"]
