@@ -1,4 +1,7 @@
-use std::{io::Write as _, time::Duration};
+use std::{
+    io::{Read as _, Write as _},
+    time::Duration,
+};
 
 use boa_engine::{
     job::NativeJob,
@@ -151,7 +154,28 @@ pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRes
         .collect::<Bytes>();
 
     // create zip::ZipArchive from data
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data)).unwrap();
-    
-    
+    let mut input_zip = zip::ZipArchive::new(std::io::Cursor::new(data)).unwrap();
+    let mut output_zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o755);
+
+    for i in 0..input_zip.len() {
+        let mut file = input_zip.by_index(i).unwrap();
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents).unwrap();
+
+        let image = image::load_from_memory(&contents).unwrap();
+        let resized = image.resize(640, 360, image::imageops::FilterType::Gaussian);
+
+        output_zip
+            .start_file(format!("image_{i}.jpg"), options)
+            .unwrap();
+        output_zip.write_all(resized.as_bytes()).unwrap();
+    }
+
+    let output = output_zip.finish().unwrap().into_inner();
+    let array = JsUint8Array::from_iter(output.into_iter(), context)?;
+
+    Ok(JsValue::from(array))
 }
