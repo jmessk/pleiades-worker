@@ -24,22 +24,23 @@ async fn main() {
     let lambda_blob = client.blob().new(script).await.unwrap();
     let lambda = lambda_blob.into_lambda("pleiades+example").await.unwrap();
 
-    let input = client
-        .blob()
-        .new(r#"{"input": "test_input"}"#)
-        .await
-        .unwrap();
+    let input = {
+        let input = args
+            .input_path
+            .map(|input_path| std::fs::read(input_path).unwrap())
+            .unwrap_or_else(|| b"example input".to_vec());
+        client.blob().new(input).await.unwrap()
+    };
 
     let mut job_list = tokio::task::JoinSet::new();
     let mut ticker = tokio::time::interval(INTERVAL);
 
-    for _i in 0..args.iteration {
+    for _i in 0..args.num_iteration {
         let lambda = lambda.clone();
         let input = input.clone();
 
         job_list.spawn(async move {
             let _job = lambda.invoke(input, None).await.unwrap();
-            // let _output = job.wait_finished(std::time::Duration::from_secs(10)).await;
         });
 
         ticker.tick().await;
@@ -84,6 +85,9 @@ struct Arg {
     #[clap(long = "script", short = 's')]
     script_path: String,
 
-    #[clap(long = "iteration", short = 'i', default_value = "10")]
-    iteration: usize,
+    #[clap(long = "blob", short = 'i')]
+    input_path: Option<String>,
+
+    #[clap(long = "num", short = 'n', default_value = "10")]
+    num_iteration: usize,
 }

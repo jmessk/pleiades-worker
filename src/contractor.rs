@@ -157,6 +157,9 @@ impl Contractor {
             }
         };
 
+        // start job processing
+        let contracted_at = Instant::now();
+
         // fetch job metadata
         //
         let info_request = pleiades_api::api::job::info::Request::builder()
@@ -193,7 +196,8 @@ impl Contractor {
         let job = Job {
             id: job_id,
             status: JobStatus::Assigned,
-            rem_time: job_deadline,
+            consumed: Duration::ZERO,
+            remaining: job_deadline,
             context: None,
             lambda: Box::new(Lambda {
                 id: job_info.lambda.lambda_id,
@@ -203,7 +207,7 @@ impl Contractor {
             input: Box::new(input.expect("input")),
 
             // instant
-            contracted_at: Instant::now(),
+            contracted_at,
         };
 
         request

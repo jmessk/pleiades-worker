@@ -3,13 +3,7 @@ use std::{
     time::Duration,
 };
 
-use boa_engine::{
-    job::NativeJob,
-    object::builtins::{JsPromise, JsUint8Array},
-    value::Type,
-    Context, JsResult, JsValue,
-};
-use bytes::Bytes;
+use boa_engine::{job::NativeJob, object::builtins::JsPromise, Context, JsResult, JsValue};
 
 use crate::runtime::{
     javascript::host_defined::{HostDefined, UserInput, UserOutput},
@@ -19,38 +13,35 @@ use crate::runtime::{
 pub fn get_user_input(
     _this: &JsValue,
     _args: &[JsValue],
-    context: &mut Context,
+    _context: &mut Context,
 ) -> JsResult<JsValue> {
-    UserInput::extract(context.realm())
-        .map(|input| {
-            let array = JsUint8Array::from_iter(input.data, context)?;
-            Ok(JsValue::from(array))
-        })
-        .unwrap_or_else(|| Ok(JsValue::undefined()))
+    // UserInput::extract(context.realm())
+    //     .map(|input| {
+    //         let array = JsUint8Array::from_iter(input.data, context)?;
+    //         Ok(JsValue::from(array))
+    //     })
+    //     .unwrap_or_else(|| Ok(JsValue::undefined()))
+    Ok(JsValue::undefined())
 }
 
 pub fn set_user_output(
     _this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
+    _args: &[JsValue],
+    _context: &mut Context,
 ) -> JsResult<JsValue> {
-    let data_js_obj = args.first().expect("data is required");
+    // let data_js_obj = args.first().expect("data is required");
 
-    let data = match data_js_obj.get_type() {
-        Type::Undefined | Type::Null => None,
-        _ => {
-            // let data = data_js_obj
-            //     .to_string(context)
-            //     .unwrap()
-            //     .to_std_string_escaped();
-            let data = data_js_obj.to_object(context)?;
-            let data: Bytes = JsUint8Array::from_object(data)?.iter(context).collect();
+    // let data = match data_js_obj.get_type() {
+    //     Type::Undefined | Type::Null => None,
+    //     _ => {
+    //         let data = data_js_obj.to_object(context)?;
+    //         let data: Bytes = JsUint8Array::from_object(data)?.iter(context).collect();
 
-            Some(data)
-        }
-    };
+    //         Some(data)
+    //     }
+    // };
 
-    UserOutput { data }.insert(context.realm());
+    // UserOutput { data }.insert(context.realm());
 
     Ok(JsValue::undefined())
 }
@@ -130,11 +121,17 @@ pub fn yield_now(_this: &JsValue, _args: &[JsValue], context: &mut Context) -> J
     Ok(JsValue::from(promise))
 }
 
-pub fn compress(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let input_obj = args.first().unwrap().to_object(context).unwrap();
-    let data = JsUint8Array::from_object(input_obj)?
-        .iter(context)
-        .collect::<Bytes>();
+pub fn compress(_this: &JsValue, _args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    // let input_obj = args.first().unwrap().to_object(context).unwrap();
+
+    // let start = std::time::Instant::now();
+    // let data = JsUint8Array::from_object(input_obj)?
+    //     .iter(context)
+    //     .collect::<Bytes>();
+    // let finished = start.elapsed();
+    // println!("data collection finished: {:?}", finished);
+
+    let data = UserInput::extract(context.realm()).unwrap().data;
 
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
@@ -143,15 +140,24 @@ pub fn compress(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     e.write_all(&data).unwrap();
     let compressed = e.finish().unwrap();
 
-    let array = JsUint8Array::from_iter(compressed, context)?;
-    Ok(JsValue::from(array))
+    // let array = JsUint8Array::from_iter(compressed, context)?;
+
+    // Ok(JsValue::from(array))
+    UserOutput {
+        data: Some(compressed.into()),
+    }
+    .insert(context.realm());
+
+    Ok(JsValue::undefined())
 }
 
-pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let input_obj = args.first().unwrap().to_object(context).unwrap();
-    let data = JsUint8Array::from_object(input_obj)?
-        .iter(context)
-        .collect::<Bytes>();
+pub fn resize(_this: &JsValue, _args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    // let input_obj = args.first().unwrap().to_object(context).unwrap();
+    // let data = JsUint8Array::from_object(input_obj)?
+    //     .iter(context)
+    //     .collect::<Bytes>();
+
+    let data = UserInput::extract(context.realm()).unwrap().data;
 
     // create zip::ZipArchive from data
     let mut input_zip = zip::ZipArchive::new(std::io::Cursor::new(data)).unwrap();
@@ -175,7 +181,13 @@ pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRes
     }
 
     let output = output_zip.finish().unwrap().into_inner();
-    let array = JsUint8Array::from_iter(output.into_iter(), context)?;
+    // let array = JsUint8Array::from_iter(output.into_iter(), context)?;
 
-    Ok(JsValue::from(array))
+    // Ok(JsValue::from(array))
+    UserOutput {
+        data: Some(output.into()),
+    }
+    .insert(context.realm());
+
+    Ok(JsValue::undefined())
 }

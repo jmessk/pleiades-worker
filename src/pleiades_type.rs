@@ -53,7 +53,9 @@ impl Default for Lambda {
 #[derive(Debug)]
 pub struct Job {
     pub status: JobStatus,
-    pub rem_time: Duration,
+
+    pub consumed: Duration,
+    pub remaining: Duration,
     pub contracted_at: Instant,
     pub context: Option<RuntimeContext>,
 
@@ -66,7 +68,8 @@ impl Default for Job {
     fn default() -> Self {
         Self {
             status: JobStatus::Assigned,
-            rem_time: Duration::from_secs(0),
+            consumed: Duration::ZERO,
+            remaining: Duration::ZERO,
             context: None,
 
             id: "default".into(),
@@ -82,18 +85,22 @@ impl Job {
     /// set_remaining_time
     ///
     ///
-    pub fn sub_rem_time(&mut self, duration: Duration) {
-        self.rem_time = self
-            .rem_time
+    pub fn sub_remaining(&mut self, duration: Duration) {
+        self.remaining = self
+            .remaining
             .checked_sub(duration)
             .unwrap_or(Duration::ZERO);
+    }
+
+    pub fn add_consumed(&mut self, duration: Duration) {
+        self.consumed = self.consumed.checked_add(duration).unwrap();
     }
 
     /// is_timeout
     ///
     ///
     pub fn is_timeout(&self) -> bool {
-        self.rem_time == Duration::ZERO
+        self.remaining == Duration::ZERO
     }
 
     /// cancel

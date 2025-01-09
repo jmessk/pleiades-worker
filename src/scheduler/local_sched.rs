@@ -111,7 +111,7 @@ impl LocalSched {
     }
 
     async fn enqueue_execute(&self, job: Job) {
-        let prev_rem_time = job.rem_time;
+        let prev_rem_time = job.remaining;
         let handle = self.executor.enqueue(job).await;
         let local_sched = self.controller.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
@@ -128,7 +128,7 @@ impl LocalSched {
     }
 
     async fn enqueue_pend(&self, job: Job) {
-        let prev_rem_time = job.rem_time;
+        let prev_rem_time = job.remaining;
         let handle = self.pending_manager.register(job).await;
         let local_sched = self.controller.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
@@ -164,12 +164,12 @@ impl LocalSched {
                     }
                     JobStatus::Ready(_) => {
                         self.controller.sub_pending(prev_rem_time);
-                        self.controller.add_queuing(job.rem_time);
+                        self.controller.add_queuing(job.remaining);
                         self.enqueue_execute(job).await;
                     }
                     JobStatus::Pending(_) => {
                         self.controller.sub_queuing(prev_rem_time);
-                        self.controller.add_pending(job.rem_time);
+                        self.controller.add_pending(job.remaining);
                         self.enqueue_pend(job).await;
 
                         if !shutdown_flag {
@@ -257,9 +257,9 @@ pub struct Controller {
 impl Controller {
     pub async fn assign(&mut self, job: Job) {
         // this is necessary to avoid double counting
-        self.add_queuing(job.rem_time);
+        self.add_queuing(job.remaining);
 
-        let prev_rem_time = job.rem_time;
+        let prev_rem_time = job.remaining;
         let request = Command::Enqueue(enqueue::Request { job, prev_rem_time });
 
         self.command_sender.send(request).await.unwrap();

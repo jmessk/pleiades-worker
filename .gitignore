@@ -1,3 +1,4 @@
 /target
 /metrics
 .env
+/assets/*

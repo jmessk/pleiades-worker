@@ -14,7 +14,11 @@ impl WorkerIdManager {
         };
 
         manager
-            .insert("default", &["pleiades+example"], default_job_deadline)
+            .insert(
+                "default",
+                &["pleiades+example", "js+compress", "js+resize"],
+                default_job_deadline,
+            )
             .await;
         manager
     }

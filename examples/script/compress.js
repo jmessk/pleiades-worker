@@ -1,6 +1,5 @@
 async function fetch(input) {
-    let output = compress(input);
-    return output;
+    compress();
 }
 
 export default fetch;

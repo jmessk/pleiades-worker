@@ -2,15 +2,16 @@
 
 ## Config
 
-### Job Generator
+### Simple Job Generator
 
 - options
   - `--script`: path to the script file
-  - `--iteration`: number of iterations. default: 10
+  - `--input`: path to the input file
+  - `--num_iteration`: number of iterations. default: 10
 
 ```bash
-./run_generator.bash -s ./examples/script/hello.js -i 10
-# cargo run --release --example job_generator -- --script ./examples/script/hello.js --iteration 100
+./run_simple_generator.bash -s ./examples/script/hello.js -n 10
+# cargo run --release --example simple_job_generator -- --script ./examples/script/hello.js --num_iteration 100
 ```
 
 ### Worker

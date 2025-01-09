@@ -141,7 +141,8 @@ impl Executor {
             // stop measuring time
             let elapsed = start.elapsed();
 
-            job.sub_rem_time(elapsed);
+            job.sub_remaining(elapsed);
+            job.add_consumed(elapsed);
 
             job_status
         };

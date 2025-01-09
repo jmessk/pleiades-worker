@@ -1,6 +1,5 @@
 async function fetch(input) {
-    let output = resize(input);
-    return output;
+    resize();
 }
 
 export default fetch;

@@ -167,6 +167,7 @@ async fn worker(config: WorkerConfig) {
     // Initialize GlobalSched
     //
     let worker_id_manager = WorkerIdManager::new(client, config.job_deadline).await;
+
     let (mut global_sched, global_sched_controller) = GlobalSched::new(
         contractor_controller,
         local_sched_manager,

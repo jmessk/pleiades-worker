@@ -173,11 +173,10 @@ impl Updater {
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
         request: update::Request,
-    ) -> (String, String, &'static str, Duration) {
+    ) -> (String, String, &'static str, Duration, Duration) {
         match request.job.status {
             JobStatus::Finished(output) => {
-                let elapsed = request.job.contracted_at.elapsed();
-                let output = output.unwrap_or(bytes::Bytes::new());
+                let output = output.unwrap_or_else(bytes::Bytes::new);
 
                 let post_handle = data_manager_controller.post_blob(output).await;
                 let post_response = post_handle.recv().await;
@@ -199,12 +198,11 @@ impl Updater {
                     request.job.id,
                     request.job.lambda.runtime,
                     "Finished",
-                    elapsed,
+                    request.job.contracted_at.elapsed(),
+                    request.job.consumed,
                 )
             }
             JobStatus::Cancelled => {
-                let elapsed = request.job.contracted_at.elapsed();
-
                 let update_request = pleiades_api::api::job::update::Request::builder()
                     .job_id(&request.job.id)
                     .data_id("0")
@@ -222,7 +220,8 @@ impl Updater {
                     request.job.id,
                     request.job.lambda.runtime,
                     "Cancelled",
-                    elapsed,
+                    request.job.contracted_at.elapsed(),
+                    request.job.consumed,
                 )
             }
             _ => unreachable!(),
@@ -230,7 +229,7 @@ impl Updater {
     }
 }
 
-fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Duration)>) {
+fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Duration, Duration)>) {
     use chrono;
     use std::fs::File;
     use std::io::prelude::*;
@@ -245,17 +244,19 @@ fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Durat
 
     file.write_all(format!("summary: {}\n", elapsed.as_millis()).as_bytes())
         .unwrap();
-    file.write_all(b"id,runtime,status,elapsed_ms\n").unwrap();
+    file.write_all(b"id,runtime,status,elapsed,consumed\n")
+        .unwrap();
 
     metrics
         .iter()
-        .for_each(|(job_id, runtime, status, elapsed)| {
+        .for_each(|(job_id, runtime, status, elapsed, comsumed)| {
             let line = format!(
-                "{},{},{},{}\n",
+                "{},{},{},{},{}\n",
                 job_id,
                 runtime,
                 status,
                 elapsed.as_millis(),
+                comsumed.as_millis()
             );
             file.write_all(line.as_bytes()).unwrap();
         });
