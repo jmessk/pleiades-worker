@@ -3,7 +3,7 @@ use boa_engine::{
     job::NativeJob,
     js_string,
     object::builtins::{JsPromise, JsUint8Array},
-    Context, JsData, JsResult, JsValue, NativeFunction,
+    Context, JsData, JsObject, JsResult, JsValue, NativeFunction,
 };
 use boa_gc::{empty_trace, Finalize, Trace};
 use bytes::Bytes;

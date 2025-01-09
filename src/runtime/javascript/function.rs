@@ -7,7 +7,7 @@ use boa_engine::{
     job::NativeJob,
     object::builtins::{JsPromise, JsUint8Array},
     value::Type,
-    Context, JsResult, JsValue,
+    Context, JsObject, JsResult, JsValue,
 };
 use bytes::Bytes;
 
@@ -15,6 +15,8 @@ use crate::runtime::{
     javascript::host_defined::{HostDefined, UserInput, UserOutput},
     RuntimeRequest,
 };
+
+use super::class::ByteData;
 
 pub fn get_user_input(
     _this: &JsValue,
@@ -25,9 +27,10 @@ pub fn get_user_input(
         .map(|input| {
             let array = JsUint8Array::from_iter(input.data, context)?;
             Ok(JsValue::from(array))
+            // let data = ByteData { inner: input.data };
+            // Ok(JsValue::from(JsObject::from_proto_and_data(None, data)))
         })
         .unwrap_or_else(|| Ok(JsValue::undefined()))
-    // Ok(JsValue::undefined())
 }
 
 pub fn set_user_output(

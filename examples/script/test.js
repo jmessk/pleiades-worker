@@ -1,9 +1,5 @@
 async function fetch(input) {
-    await sleep(50);
-    blockingSleep(50);
-    // syncSleep(50);
-    // await sleep(50);
-    // await yieldNow();
+    let data = new ByteData();
 
     return "test_output";
 }

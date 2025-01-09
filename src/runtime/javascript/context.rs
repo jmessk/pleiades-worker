@@ -64,6 +64,7 @@ impl JsContext {
         context
             .register_global_class::<class::HttpClient>()
             .unwrap();
+        context.register_global_class::<class::ByteData>().unwrap();
     }
 
     fn register_builtin_functions(context: &mut Context) {
