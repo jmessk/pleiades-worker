@@ -1,9 +1,9 @@
 mod blob;
-mod nn;
+mod ai;
 mod http_client;
 mod byte_data;
 
 pub use blob::Blob;
-pub use nn::Nn;
+pub use ai::Ai;
 pub use http_client::HttpClient;
 pub use byte_data::ByteData;

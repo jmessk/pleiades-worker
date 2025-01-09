@@ -9,7 +9,9 @@ use boa_gc::{empty_trace, Finalize, Trace};
 use bytes::Bytes;
 
 use crate::runtime::{
-    blob, javascript::host_defined::HostDefined as _, RuntimeRequest, RuntimeResponse,
+    blob,
+    javascript::{class::ByteData, host_defined::HostDefined as _},
+    RuntimeRequest, RuntimeResponse,
 };
 
 #[derive(Debug, Finalize, JsData)]
@@ -66,9 +68,11 @@ impl Blob {
             let result = match response {
                 Some(RuntimeResponse::Blob(blob::Response::Get(Some(blob)))) => {
                     tracing::trace!("response found: size: {:?} Bytes", blob.data.len());
-                    let array = JsUint8Array::from_iter(blob.data, context)?;
+                    // let array = JsUint8Array::from_iter(blob.data, context)?;
 
-                    JsValue::from(array)
+                    // JsValue::from(array)
+                    let data = ByteData { inner: blob.data };
+                    JsValue::from(JsObject::from_proto_and_data(None, data))
                 }
                 _ => {
                     tracing::trace!("response not found");
@@ -88,7 +92,8 @@ impl Blob {
 
     pub fn post(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
         let data_obj = args.first().unwrap().to_object(context).unwrap();
-        let data: Bytes = JsUint8Array::from_object(data_obj)?.iter(context).collect();
+        // let data: Bytes = JsUint8Array::from_object(data_obj)?.iter(context).collect();
+        let data: Bytes = data_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
 
         // Create a request object and insert it into the context
         RuntimeRequest::Blob(blob::Request::Post(data)).insert(context.realm());

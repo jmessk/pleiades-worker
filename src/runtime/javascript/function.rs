@@ -43,10 +43,15 @@ pub fn set_user_output(
     let data = match data_js_obj.get_type() {
         Type::Undefined | Type::Null => None,
         _ => {
-            let data = data_js_obj.to_object(context)?;
-            let data: Bytes = JsUint8Array::from_object(data)?.iter(context).collect();
-
-            Some(data)
+            // let data = data_js_obj.to_object(context)?;
+            // let data: Bytes = JsUint8Array::from_object(data)?.iter(context).collect();
+            let byte_data_obj = data_js_obj.to_object(context).unwrap();
+            let byte_data = byte_data_obj
+                .downcast_ref::<ByteData>()
+                .unwrap()
+                .inner
+                .clone();
+            Some(byte_data)
         }
     };
 
@@ -133,10 +138,12 @@ pub fn yield_now(_this: &JsValue, _args: &[JsValue], context: &mut Context) -> J
 pub fn compress(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let input_obj = args.first().unwrap().to_object(context).unwrap();
 
+    let data = input_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
+
     // let start = std::time::Instant::now();
-    let data = JsUint8Array::from_object(input_obj)?
-        .iter(context)
-        .collect::<Bytes>();
+    // let data = JsUint8Array::from_object(input_obj)?
+    //     .iter(context)
+    //     .collect::<Bytes>();
     // let finished = start.elapsed();
     // println!("compress");
     // println!("data collection finished: {:?}", finished);
@@ -149,9 +156,11 @@ pub fn compress(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
     e.write_all(&data).unwrap();
     let compressed = e.finish().unwrap();
-    let array = JsUint8Array::from_iter(compressed, context)?;
-
-    Ok(JsValue::from(array))
+    // let array = JsUint8Array::from_iter(compressed, context)?;
+    let output = ByteData {
+        inner: compressed.into(),
+    };
+    Ok(JsValue::from(JsObject::from_proto_and_data(None, output)))
     // UserOutput {
     //     data: Some(compressed.into()),
     // }
@@ -162,9 +171,10 @@ pub fn compress(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
 pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let input_obj = args.first().unwrap().to_object(context).unwrap();
-    let data = JsUint8Array::from_object(input_obj)?
-        .iter(context)
-        .collect::<Bytes>();
+    // let data = JsUint8Array::from_object(input_obj)?
+    //     .iter(context)
+    //     .collect::<Bytes>();
+    let data = input_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
 
     // let data = UserInput::extract(context.realm()).unwrap().data;
 
@@ -189,9 +199,12 @@ pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRes
     }
 
     let output = output_zip.finish().unwrap().into_inner();
-    let array = JsUint8Array::from_iter(output.into_iter(), context)?;
+    // let array = JsUint8Array::from_iter(output.into_iter(), context)?;
+    let output = ByteData {
+        inner: output.into(),
+    };
 
-    Ok(JsValue::from(array))
+    Ok(JsValue::from(JsObject::from_proto_and_data(None, output)))
     // UserOutput {
     //     data: Some(output.into()),
     // }

@@ -85,8 +85,8 @@ async fn main() {
         // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_l));
         // ticker.tick().await;
 
-        // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_s));
-        // ticker.tick().await;
+        join_set.spawn(invoke_helper(&lambda_resize, &blob_images_s));
+        ticker.tick().await;
         // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_m));
         // ticker.tick().await;
         // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_l));

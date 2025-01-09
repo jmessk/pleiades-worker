@@ -3,13 +3,15 @@ use boa_engine::{
     job::NativeJob,
     js_string,
     object::builtins::{JsPromise, JsUint8Array},
-    Context, JsData, JsResult, JsValue, NativeFunction,
+    Context, JsData, JsObject, JsResult, JsValue, NativeFunction,
 };
 use boa_gc::{empty_trace, Finalize, Trace};
 use bytes::Bytes;
 
 use crate::runtime::{
-    http, javascript::host_defined::HostDefined as _, RuntimeRequest, RuntimeResponse,
+    http,
+    javascript::{class::ByteData, host_defined::HostDefined as _},
+    RuntimeRequest, RuntimeResponse,
 };
 
 #[derive(Debug, Finalize, JsData)]
@@ -66,8 +68,10 @@ impl HttpClient {
             let result = match response {
                 Some(RuntimeResponse::Http(http::Response::Get(Some(body)))) => {
                     tracing::trace!("response found: size: {:?} Bytes", body.len());
-                    let array = JsUint8Array::from_iter(body, context)?;
-                    JsValue::from(array)
+                    // let array = JsUint8Array::from_iter(body, context)?;
+                    // JsValue::from(array)
+                    let data = ByteData { inner: body };
+                    JsValue::from(JsObject::from_proto_and_data(None, data))
                 }
                 _ => {
                     tracing::trace!("response not found");
@@ -94,7 +98,8 @@ impl HttpClient {
             .to_std_string_escaped();
 
         let body_obj = args.get(1).unwrap().to_object(context).unwrap();
-        let body: Bytes = JsUint8Array::from_object(body_obj)?.iter(context).collect();
+        // let body: Bytes = JsUint8Array::from_object(body_obj)?.iter(context).collect();
+        let body: Bytes = body_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
 
         // Create a request object and insert it into the context
         RuntimeRequest::Http(http::Request::Post { url, body }).insert(context.realm());
@@ -110,8 +115,10 @@ impl HttpClient {
             let result = match response {
                 Some(RuntimeResponse::Http(http::Response::Get(Some(body)))) => {
                     tracing::trace!("response found: {:?}", body.len());
-                    let array = JsUint8Array::from_iter(body, context)?;
-                    JsValue::from(array)
+                    // let array = JsUint8Array::from_iter(body, context)?;
+                    // JsValue::from(array)
+                    let data = ByteData { inner: body };
+                    JsValue::from(JsObject::from_proto_and_data(None, data))
                 }
                 _ => {
                     tracing::trace!("response not found");

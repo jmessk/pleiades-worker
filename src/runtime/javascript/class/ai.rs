@@ -7,14 +7,14 @@ use boa_engine::{
 use boa_gc::{empty_trace, Finalize, Trace};
 
 #[derive(Debug, Finalize, JsData)]
-pub struct Nn {}
+pub struct Ai {}
 
-unsafe impl Trace for Nn {
+unsafe impl Trace for Ai {
     empty_trace!();
 }
 
-impl Class for Nn {
-    const NAME: &'static str = "Nn";
+impl Class for Ai {
+    const NAME: &'static str = "Ai";
     const LENGTH: usize = 0;
 
     fn data_constructor(
@@ -22,7 +22,7 @@ impl Class for Nn {
         _args: &[JsValue],
         _context: &mut Context,
     ) -> JsResult<Self> {
-        Ok(Nn {})
+        Ok(Ai {})
     }
 
     fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
@@ -35,7 +35,7 @@ impl Class for Nn {
     }
 }
 
-impl Nn {
+impl Ai {
     pub fn get(
         _this: &JsValue,
         _args: &[JsValue],

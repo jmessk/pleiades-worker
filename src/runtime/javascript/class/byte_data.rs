@@ -30,7 +30,6 @@ impl Class for ByteData {
         _args: &[JsValue],
         _context: &mut Context,
     ) -> JsResult<Self> {
-        println!("new");
         Ok(ByteData {
             inner: bytes::Bytes::new(),
         })
@@ -41,6 +40,11 @@ impl Class for ByteData {
             js_string!("fromIntU8Array"),
             2,
             NativeFunction::from_fn_ptr(Self::from_int_u8_array),
+        );
+        class.method(
+            js_string!("toIntU8Array"),
+            0,
+            NativeFunction::from_fn_ptr(Self::to_int_u8_array),
         );
 
         Ok(())
@@ -60,5 +64,21 @@ impl ByteData {
             None,
             Self { inner: data },
         )))
+    }
+
+    pub fn to_int_u8_array(
+        _this: &JsValue,
+        _args: &[JsValue],
+        context: &mut Context,
+    ) -> JsResult<JsValue> {
+        println!("to_int_u8_array");
+        let data = _this
+            .as_object()
+            .unwrap()
+            .downcast_ref::<ByteData>()
+            .unwrap()
+            .inner
+            .clone();
+        Ok(JsValue::from(JsUint8Array::from_iter(data, context)?))
     }
 }

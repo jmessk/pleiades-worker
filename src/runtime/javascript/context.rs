@@ -60,7 +60,7 @@ impl JsContext {
         TextEncoder::register(context).unwrap();
 
         context.register_global_class::<class::Blob>().unwrap();
-        context.register_global_class::<class::Nn>().unwrap();
+        context.register_global_class::<class::Ai>().unwrap();
         context
             .register_global_class::<class::HttpClient>()
             .unwrap();
