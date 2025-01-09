@@ -176,7 +176,6 @@ pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRes
         let mut file = input_zip.by_index(i).unwrap();
         let mut contents = Vec::new();
         file.read_to_end(&mut contents).unwrap();
-        println!("file: {}", file.name());
         let image = image::load_from_memory(&contents).unwrap();
         let resized = image.resize(640, 360, image::imageops::FilterType::Gaussian);
 
