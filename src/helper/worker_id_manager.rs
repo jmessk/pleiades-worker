@@ -16,7 +16,13 @@ impl WorkerIdManager {
         manager
             .insert(
                 "default",
-                &["pleiades+example", "js+compress", "js+resize"],
+                &[
+                    "pleiades+example",
+                    "js+compress",
+                    "js+resize",
+                    "js+fib",
+                    "js+gpu",
+                ],
                 default_job_deadline,
             )
             .await;

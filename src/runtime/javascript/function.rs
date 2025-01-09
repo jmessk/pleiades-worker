@@ -45,13 +45,29 @@ pub fn set_user_output(
         _ => {
             // let data = data_js_obj.to_object(context)?;
             // let data: Bytes = JsUint8Array::from_object(data)?.iter(context).collect();
-            let byte_data_obj = data_js_obj.to_object(context).unwrap();
-            let byte_data = byte_data_obj
-                .downcast_ref::<ByteData>()
-                .unwrap()
-                .inner
-                .clone();
-            Some(byte_data)
+            // let byte_data_obj = data_js_obj.as_object().unwrap();
+            // let byte_data = byte_data_obj
+            //     .downcast_ref::<ByteData>()
+            //     .unwrap()
+            //     .inner
+            //     .clone();
+            // Some(byte_data)
+            if let Some(byte_data_obj) = data_js_obj.as_object() {
+                let data = byte_data_obj
+                    .downcast_ref::<ByteData>()
+                    .unwrap()
+                    .inner
+                    .clone();
+
+                Some(data)
+            } else {
+                let msg = data_js_obj
+                    .to_string(context)
+                    .unwrap()
+                    .to_std_string_escaped();
+
+                Some(msg.into())
+            }
         }
     };
 

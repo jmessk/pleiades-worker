@@ -1,8 +1,10 @@
 import { blob, ai } from "pleiades"
 
 async function fetch(input) {
-    // console.log("get-blob.js");
-    let data = await blob.get("0");
+    let inputId = new TextDecoder().decode(input);
+    let inputBlob = await blob.get(inputId);
+
+    let output = ai.infer("openpose", inputBlob);
 
     return "test_output";
 }

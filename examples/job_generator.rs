@@ -33,11 +33,22 @@ async fn main() {
         let blob = client.blob().new(script).await.unwrap();
         blob.into_lambda("js+resize").await.unwrap()
     };
+    let lambda_fib = {
+        let script = std::fs::read("./examples/script/fib.js").unwrap();
+        let blob = client.blob().new(script).await.unwrap();
+        blob.into_lambda("js+fib").await.unwrap()
+    };
+    let lambda_openpose = {
+        let script = std::fs::read("./examples/script/openpose.js").unwrap();
+        let blob = client.blob().new(script).await.unwrap();
+        blob.into_lambda("js+ai").await.unwrap()
+    };
     //
     // /////
 
     // input
     //
+    let blob_blank = client.blob().new("no input").await.unwrap();
     let blob_log_zoom_s = {
         let data = std::fs::read("./assets/zoom-s.json").unwrap();
         let blob = client.blob().new(data).await.unwrap();
@@ -91,6 +102,8 @@ async fn main() {
         // ticker.tick().await;
         // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_l));
         // ticker.tick().await;
+
+        join_set.spawn(invoke_helper(&lambda_fib, &blob_blank));
     }
 
     let _job_list = join_set.join_all().await;

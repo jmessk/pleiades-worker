@@ -2,6 +2,7 @@ use boa_engine::{context, Module, Source};
 
 const JS_CODE: &str = r#"
     const blob = new Blob();
+    const ai = new Ai();
 
     export { blob };
 "#;

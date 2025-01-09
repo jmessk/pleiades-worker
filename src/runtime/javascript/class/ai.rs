@@ -1,10 +1,18 @@
-use std::future::Future;
+use std::{future::Future, time::Duration};
 
 use boa_engine::{
     class::{Class, ClassBuilder},
-    js_string, Context, JsData, JsResult, JsValue, NativeFunction,
+    job::NativeJob,
+    js_string,
+    object::builtins::JsPromise,
+    Context, JsData, JsObject, JsResult, JsValue, NativeFunction,
 };
 use boa_gc::{empty_trace, Finalize, Trace};
+
+use crate::runtime::{
+    javascript::{class::ByteData, host_defined::HostDefined as _},
+    RuntimeRequest, RuntimeResponse,
+};
 
 #[derive(Debug, Finalize, JsData)]
 pub struct Ai {}
@@ -26,24 +34,53 @@ impl Class for Ai {
     }
 
     fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
-        // let fn_get = NativeFunction::from_fn_ptr(Self::get);
-        let fn_get = NativeFunction::from_async_fn(Self::get);
-
-        class.method(js_string!("get"), 1, fn_get);
+        class.method(
+            js_string!("infer"),
+            2,
+            NativeFunction::from_fn_ptr(Self::infer),
+        );
 
         Ok(())
     }
 }
 
 impl Ai {
-    pub fn get(
+    pub fn infer(
         _this: &JsValue,
-        _args: &[JsValue],
-        _context: &mut Context,
-    ) -> impl Future<Output = JsResult<JsValue>> {
-        async {
-            let output = js_string!("blob");
-            Ok(output.into())
-        }
+        args: &[JsValue],
+        context: &mut Context,
+    ) -> JsResult<JsValue> {
+        let _model = args
+            .first()
+            .unwrap()
+            .to_string(context)
+            .unwrap()
+            .to_std_string_escaped();
+
+        let _input = args
+            .get(1)
+            .unwrap()
+            .to_object(context)
+            .unwrap()
+            .downcast_ref::<ByteData>()
+            .unwrap()
+            .inner
+            .clone();
+
+        // Create a request object and insert it into the context
+        RuntimeRequest::Sleep(Duration::from_millis(75 * 10)).insert(context.realm());
+        tracing::trace!("request inserted into context");
+        let (promise, resolver) = JsPromise::new_pending(context);
+
+        let job = NativeJob::new(move |context| {
+            tracing::trace!("promise job called");
+            resolver
+                .resolve
+                .call(&JsValue::undefined(), &[JsValue::undefined()], context)
+        });
+
+        context.job_queue().enqueue_promise_job(job, context);
+
+        Ok(JsValue::from(promise))
     }
 }
