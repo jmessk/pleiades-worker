@@ -1,5 +1,5 @@
-num_contractors: 4
-num_executors: 1
+num_contractors: 16
+num_executors: 8
 policy: blocking
-exec_deadline: 4000ms
-job_deadline: 1000ms
+exec_deadline: 10s
+job_deadline: 1s

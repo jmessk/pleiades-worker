@@ -41,7 +41,7 @@ async fn main() {
     let lambda_openpose = {
         let script = std::fs::read("./examples/script/openpose.js").unwrap();
         let blob = client.blob().new(script).await.unwrap();
-        blob.into_lambda("js+ai").await.unwrap()
+        blob.into_lambda("js+gpu").await.unwrap()
     };
     //
     // /////
@@ -67,6 +67,11 @@ async fn main() {
 
     let blob_images_s = {
         let data = std::fs::read("./assets/images.zip").unwrap();
+        let blob = client.blob().new(data).await.unwrap();
+        client.blob().new(blob.id.to_string()).await.unwrap()
+    };
+    let blob_images_mini = {
+        let data = std::fs::read("./assets/images_mini.zip").unwrap();
         let blob = client.blob().new(data).await.unwrap();
         client.blob().new(blob.id.to_string()).await.unwrap()
     };
@@ -104,6 +109,8 @@ async fn main() {
         // ticker.tick().await;
 
         join_set.spawn(invoke_helper(&lambda_fib, &blob_blank));
+
+        join_set.spawn(invoke_helper(&lambda_openpose, &blob_images_mini));
     }
 
     let _job_list = join_set.join_all().await;
