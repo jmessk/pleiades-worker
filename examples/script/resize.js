@@ -1,5 +1,12 @@
+import { blob } from "pleiades";
+
 async function fetch(input) {
-    resize();
+    let inputId = new TextDecoder().decode(input);
+    let inputBlob = await blob.get(inputId);
+
+    let output = resize(inputBlob);
+
+    return output;
 }
 
 export default fetch;

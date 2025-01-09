@@ -28,7 +28,6 @@ async fn main() {
         let blob = client.blob().new(script).await.unwrap();
         blob.into_lambda("js+compress").await.unwrap()
     };
-
     let lambda_resize = {
         let script = std::fs::read("./examples/script/resize.js").unwrap();
         let blob = client.blob().new(script).await.unwrap();
@@ -40,21 +39,25 @@ async fn main() {
     // input
     //
     let blob_log_zoom_s = {
-        let input = std::fs::read("./assets/zoom-s.json").unwrap();
-        client.blob().new(input).await.unwrap()
+        let data = std::fs::read("./assets/zoom-s.json").unwrap();
+        let blob = client.blob().new(data).await.unwrap();
+        client.blob().new(blob.id.to_string()).await.unwrap()
     };
     let blob_log_zoom_m = {
-        let input = std::fs::read("./assets/zoom-m.json").unwrap();
-        client.blob().new(input).await.unwrap()
+        let data = std::fs::read("./assets/zoom-m.json").unwrap();
+        let blob = client.blob().new(data).await.unwrap();
+        client.blob().new(blob.id.to_string()).await.unwrap()
     };
     let blob_log_zoom_l = {
-        let input = std::fs::read("./assets/zoom-l.json").unwrap();
-        client.blob().new(input).await.unwrap()
+        let data = std::fs::read("./assets/zoom-l.json").unwrap();
+        let blob = client.blob().new(data).await.unwrap();
+        client.blob().new(blob.id.to_string()).await.unwrap()
     };
 
     let blob_images_s = {
-        let input = std::fs::read("./assets/images.zip").unwrap();
-        client.blob().new(input).await.unwrap()
+        let data = std::fs::read("./assets/images.zip").unwrap();
+        let blob = client.blob().new(data).await.unwrap();
+        client.blob().new(blob.id.to_string()).await.unwrap()
     };
     // let blob_images_s = {
     //     let input = std::fs::read("./assets/images-s.zip").unwrap();
@@ -77,13 +80,13 @@ async fn main() {
     for _i in 0..args.num_iteration {
         join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_s));
         ticker.tick().await;
-        join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_m));
-        ticker.tick().await;
-        join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_l));
-        ticker.tick().await;
+        // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_m));
+        // ticker.tick().await;
+        // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_l));
+        // ticker.tick().await;
 
-        join_set.spawn(invoke_helper(&lambda_resize, &blob_images_s));
-        ticker.tick().await;
+        // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_s));
+        // ticker.tick().await;
         // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_m));
         // ticker.tick().await;
         // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_l));

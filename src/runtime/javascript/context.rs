@@ -115,7 +115,7 @@ impl JsContext {
         context
             .register_global_builtin_callable(
                 js_string!("compress"),
-                0,
+                1,
                 NativeFunction::from_fn_ptr(function::compress),
             )
             .unwrap();
@@ -123,7 +123,7 @@ impl JsContext {
         context
             .register_global_builtin_callable(
                 js_string!("resize"),
-                0,
+                1,
                 NativeFunction::from_fn_ptr(function::resize),
             )
             .unwrap();

@@ -8,8 +8,9 @@ use boa_engine::{
 use boa_gc::{empty_trace, Finalize, Trace};
 use bytes::Bytes;
 
-use crate::runtime::{blob, RuntimeRequest, RuntimeResponse};
-use crate::runtime::{http, javascript::host_defined::HostDefined as _};
+use crate::runtime::{
+    blob, javascript::host_defined::HostDefined as _, RuntimeRequest, RuntimeResponse,
+};
 
 #[derive(Debug, Finalize, JsData)]
 pub struct Blob {}
