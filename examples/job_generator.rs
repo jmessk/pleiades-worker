@@ -43,6 +43,11 @@ async fn main() {
         let blob = client.blob().new(script).await.unwrap();
         blob.into_lambda("js+gpu").await.unwrap()
     };
+    let lambda_counter = {
+        let script = std::fs::read("./examples/script/counter.js").unwrap();
+        let blob = client.blob().new(script).await.unwrap();
+        blob.into_lambda("js+counter").await.unwrap()
+    };
     //
     // /////
 
@@ -113,6 +118,8 @@ async fn main() {
 
         join_set.spawn(invoke_helper(&lambda_openpose, &blob_images_mini));
         ticker.tick().await;
+
+        join_set.spawn(invoke_helper(&lambda_counter, &blob_blank));
     }
 
     let _job_list = join_set.join_all().await;

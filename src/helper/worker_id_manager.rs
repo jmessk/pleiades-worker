@@ -22,6 +22,7 @@ impl WorkerIdManager {
                     "js+resize",
                     "js+fib",
                     "js+gpu",
+                    "js+counter",
                 ],
                 default_job_deadline,
             )
