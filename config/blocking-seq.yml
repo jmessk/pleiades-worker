@@ -1,5 +1,0 @@
-num_contractors: 16
-num_executors: 4
-policy: blocking_pipeline
-exec_deadline: 100ms
-job_deadline: 100ms

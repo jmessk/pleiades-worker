@@ -308,6 +308,7 @@ async fn save_cpu_usage(
         counter += 1;
     }
 
+    tokio::time::sleep(Duration::from_secs(30)).await;
     stop_notify.send(()).unwrap();
     scheduler_controller.signal_shutdown_req().await;
 
