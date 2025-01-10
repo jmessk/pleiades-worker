@@ -2,3 +2,4 @@
 /metrics
 .env
 /assets/*
+/cpu_usage

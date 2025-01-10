@@ -1,5 +1,5 @@
 num_contractors: 32
-num_executors: 8
+num_executors: 16
 num_cpus: 8
 policy: blocking
 exec_deadline: 10s

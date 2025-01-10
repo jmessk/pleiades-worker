@@ -52,12 +52,14 @@ fn main() {
 
     let cpu_list = core_affinity::get_core_ids().unwrap();
     let num_cores = cpu_list.len();
-    let num_tokio_workers = num_cores - config.num_executors;
+    let num_tokio_workers = num_cores - config.num_cpus;
     let num_executors = config.num_executors;
+    let num_use_cores = config.num_cpus;
 
     println!("num_cores: {num_cores}");
     println!("num_tokio_workers: {num_tokio_workers}");
     println!("num_executors: {num_executors}");
+    println!("num_cpus: {num_use_cores}");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -66,15 +68,20 @@ fn main() {
         .on_thread_start(move || {
             static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
             let count = CORE_COUNT.load(std::sync::atomic::Ordering::SeqCst);
-            let id = num_cores
-                - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % num_cores
-                - 1;
 
             // println!("count: {count}, id: {id}");
+            if count < num_tokio_workers {
+                let id =
+                    num_cores - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) - 1;
 
-            if count < num_cores {
                 core_affinity::set_for_current(core_affinity::CoreId { id });
-                println!("thread is set to core {}", id);
+                println!("tokio worker is set to core {}", id);
+            } else if count < num_tokio_workers + num_executors {
+                let id = (CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                    - num_tokio_workers)
+                    % num_use_cores;
+                core_affinity::set_for_current(core_affinity::CoreId { id });
+                println!("executor is set to core {}", id);
             }
         })
         .build()
@@ -99,8 +106,11 @@ async fn worker(config: WorkerConfig) {
         config.num_contractors,
         config.job_deadline,
     );
-    let (mut updater, updater_controller) =
-        Updater::new(client.clone(), data_manager_controller.clone());
+    let (mut updater, updater_controller) = Updater::new(
+        client.clone(),
+        data_manager_controller.clone(),
+        &config.policy,
+    );
     let (mut pending_manager, pending_manager_controller) =
         PendingManager::new(data_manager_controller);
     //
@@ -181,11 +191,11 @@ async fn worker(config: WorkerConfig) {
     });
 
     let (stop_notify_sender, stop_notify_receiver) = tokio::sync::watch::channel(());
-    join_set.spawn(save_cpu_usage(config.num_executors, stop_notify_receiver));
+    join_set.spawn(save_cpu_usage(config.num_cpus, stop_notify_receiver));
 
     tokio::signal::ctrl_c().await.unwrap();
     global_sched_controller.signal_shutdown_req().await;
-    stop_notify_sender.send(()).unwrap();
+    let _ = stop_notify_sender.send(());
 
     drop(updater_controller);
     drop(pending_manager_controller);
@@ -206,6 +216,7 @@ use duration_str::deserialize_duration;
 struct WorkerConfig {
     num_contractors: usize,
     num_executors: usize,
+    num_cpus: usize,
     policy: String,
     #[serde(deserialize_with = "deserialize_duration")]
     exec_deadline: Duration,
@@ -218,6 +229,7 @@ impl Default for WorkerConfig {
         Self {
             num_contractors: 1,
             num_executors: 1,
+            num_cpus: 1,
             policy: "cooperative_pipeline".to_string(),
             exec_deadline: Duration::from_millis(300),
             job_deadline: Duration::from_millis(100),
@@ -234,7 +246,7 @@ impl WorkerConfig {
     }
 }
 
-async fn save_cpu_usage(num_executors: usize, mut stop_notify: tokio::sync::watch::Receiver<()>) {
+async fn save_cpu_usage(num_use_cpus: usize, mut stop_notify: tokio::sync::watch::Receiver<()>) {
     use chrono;
     use std::fs::File;
     use std::io::prelude::*;
@@ -248,7 +260,7 @@ async fn save_cpu_usage(num_executors: usize, mut stop_notify: tokio::sync::watc
     let file = File::create(&file_name).unwrap();
     let mut writer = BufWriter::new(file);
     writer.write_all(b"timestamp").unwrap();
-    (0..num_executors).for_each(|i| {
+    (0..num_use_cpus).for_each(|i| {
         writer.write_all(format!(",core_{i}").as_bytes()).unwrap();
     });
     writer.write_all(b"\n").unwrap();
@@ -266,12 +278,12 @@ async fn save_cpu_usage(num_executors: usize, mut stop_notify: tokio::sync::watc
     } {
         system.refresh_cpu_usage();
         let cpu_list = system.cpus();
-        let mut sum = 0.0;
+        let mut sum = 0;
 
         writer.write_all(format!("{counter}").as_bytes()).unwrap();
-        for i in 0..num_executors {
+        for i in 0..num_use_cpus {
             let cpu = cpu_list.get(i).unwrap();
-            let usage = cpu.cpu_usage();
+            let usage = cpu.cpu_usage() as u8;
             writer.write_all(format!(",{}", usage).as_bytes()).unwrap();
 
             sum += usage;
@@ -280,7 +292,7 @@ async fn save_cpu_usage(num_executors: usize, mut stop_notify: tokio::sync::watc
         writer.write_all(b"\n").unwrap();
         writer.flush().unwrap();
 
-        if 5 < counter && sum < 1.0 {
+        if 5 < counter && sum < 5 {
             tracing::info!("stop cpu usage monitoring: counter={counter}");
             break;
         }

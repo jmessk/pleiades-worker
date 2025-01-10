@@ -109,8 +109,10 @@ async fn main() {
         // ticker.tick().await;
 
         join_set.spawn(invoke_helper(&lambda_fib, &blob_blank));
+        ticker.tick().await;
 
-        join_set.spawn(invoke_helper(&lambda_openpose, &blob_images_mini));
+        // join_set.spawn(invoke_helper(&lambda_openpose, &blob_images_mini));
+        // ticker.tick().await;
     }
 
     let _job_list = join_set.join_all().await;

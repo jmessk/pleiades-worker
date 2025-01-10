@@ -42,7 +42,7 @@ impl Contractor {
         max_concurrency: usize,
         job_deadline: Duration,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(16);
+        let (command_sender, command_receiver) = mpsc::channel(64);
 
         let contractor = Self {
             client,
@@ -78,6 +78,13 @@ impl Contractor {
 
             if self.semaphore.available_permits() == 0 {
                 tracing::warn!("Contractor is busy");
+
+                let Command::Contract(request) = command;
+                request
+                    .response_sender
+                    .send(contract::Response { contracted: None })
+                    .expect("contractor");
+                continue;
             }
 
             let permit = self.semaphore.clone().acquire_owned().await.unwrap();

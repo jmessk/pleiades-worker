@@ -29,6 +29,8 @@ pub struct Updater {
     /// number of jobs currently being contracted
     max_concurrency: usize,
     semaphore: Arc<Semaphore>,
+
+    policy: String,
 }
 
 impl Updater {
@@ -37,6 +39,7 @@ impl Updater {
     pub fn new(
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
+        policy: &str,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(16);
 
@@ -46,6 +49,7 @@ impl Updater {
             command_receiver,
             max_concurrency: 64,
             semaphore: Arc::new(Semaphore::new(64)),
+            policy: policy.to_string(),
         };
 
         let controller = Controller { command_sender };
@@ -102,7 +106,7 @@ impl Updater {
                 let summary = end - instant;
                 tracing::info!("summary: {summary:?}, {} jobs", metrics.len());
                 // tracing::info!(summary, metrics.len());
-                save_csv(summary, metrics);
+                save_csv(summary, metrics, &self.policy);
             }
             None => {
                 tracing::info!("finished 0 job");
@@ -229,7 +233,11 @@ impl Updater {
     }
 }
 
-fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Duration, Duration)>) {
+fn save_csv(
+    elapsed: Duration,
+    metrics: Vec<(String, String, &'static str, Duration, Duration)>,
+    policy: &str,
+) {
     use chrono;
     use std::fs::File;
     use std::io::prelude::*;
@@ -243,6 +251,8 @@ fn save_csv(elapsed: Duration, metrics: Vec<(String, String, &'static str, Durat
     let mut file = File::create(&file_name).unwrap();
 
     file.write_all(format!("summary: {}\n", elapsed.as_millis()).as_bytes())
+        .unwrap();
+    file.write_all(format!("policy: {policy}\n").as_bytes())
         .unwrap();
     file.write_all(b"id,runtime,status,elapsed,consumed\n")
         .unwrap();
@@ -442,7 +452,7 @@ mod tests {
             16,
             Duration::from_millis(100),
         );
-        let (mut updater, _updater_api) = Updater::new(client.clone(), data_manager_controller);
+        let (mut updater, _updater_api) = Updater::new(client.clone(), data_manager_controller, "");
 
         tokio::spawn(async move {
             fetcher.run().await;
