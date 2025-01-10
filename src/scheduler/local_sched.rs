@@ -54,7 +54,7 @@ impl LocalSched {
         pending_manager: pending_manager::Controller,
         action_sender: watch::Sender<()>,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(64);
+        let (command_sender, command_receiver) = mpsc::channel(128);
         let queuing = Arc::new(Mutex::new(Duration::ZERO));
         let pending = Arc::new(Mutex::new(Duration::ZERO));
 

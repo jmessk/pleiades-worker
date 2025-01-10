@@ -35,7 +35,7 @@ impl PendingManager {
     ///
     ///
     pub fn new(data_manager_controller: data_manager::Controller) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(16);
+        let (command_sender, command_receiver) = mpsc::channel(128);
 
         let data_manager = Self {
             command_receiver,

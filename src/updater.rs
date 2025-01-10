@@ -41,7 +41,7 @@ impl Updater {
         data_manager_controller: data_manager::Controller,
         policy: &str,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(16);
+        let (command_sender, command_receiver) = mpsc::channel(128);
 
         let updater = Self {
             client,

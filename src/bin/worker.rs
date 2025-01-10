@@ -190,7 +190,7 @@ async fn worker(config: WorkerConfig) {
         global_sched.run().await;
     });
 
-    let (stop_notify_sender, stop_notify_receiver) = tokio::sync::oneshot::channel();
+    let (stop_notify_sender, mut stop_notify_receiver) = tokio::sync::watch::channel(());
     join_set.spawn(save_cpu_usage(
         config.num_cpus,
         stop_notify_sender,
@@ -199,8 +199,8 @@ async fn worker(config: WorkerConfig) {
 
     // tokio::signal::ctrl_c().await.unwrap();
     // global_sched_controller.signal_shutdown_req().await;
-    // let _ = stop_notify_sender.send(());
-    let _ = stop_notify_receiver.await;
+    let _ = stop_notify_receiver.changed().await;
+    // let _ = stop_notify_receiver.await;
 
     drop(updater_controller);
     drop(pending_manager_controller);
@@ -252,8 +252,8 @@ impl WorkerConfig {
 
 async fn save_cpu_usage(
     num_use_cpus: usize,
-    stop_notify: tokio::sync::oneshot::Sender<()>,
-    global_sched_controller: scheduler::global_sched::Controller,
+    stop_notify: tokio::sync::watch::Sender<()>,
+    scheduler_controller: scheduler::global_sched::Controller,
 ) {
     use chrono;
     use std::fs::File;
@@ -278,7 +278,12 @@ async fn save_cpu_usage(
     let mut ticker = tokio::time::interval(Duration::from_millis(200));
     let mut counter = 0;
 
-    loop {
+    while {
+        tokio::select! {
+            // _ = stop_notify.changed() => false,
+            _ = ticker.tick() => true,
+        }
+    } {
         system.refresh_cpu_usage();
         let cpu_list = system.cpus();
         let mut sum = 0;
@@ -295,17 +300,16 @@ async fn save_cpu_usage(
         writer.write_all(b"\n").unwrap();
         writer.flush().unwrap();
 
-        if 10 < counter && sum < 3 {
+        if 10 < counter && sum < 1 {
             tracing::info!("stop cpu usage monitoring: counter={counter}");
             break;
         }
 
         counter += 1;
-        ticker.tick().await;
     }
 
-    global_sched_controller.signal_shutdown_req().await;
-    let _ = stop_notify.send(());
+    stop_notify.send(()).unwrap();
+    scheduler_controller.signal_shutdown_req().await;
 
     println!("cpu usage is saved to {file_name}");
 }

@@ -35,7 +35,7 @@ impl GlobalSched {
         worker_id_manager: WorkerIdManager,
         action_receiver: watch::Receiver<()>,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(64);
+        let (command_sender, command_receiver) = mpsc::channel(128);
 
         let controller = Controller { command_sender };
 
@@ -127,7 +127,10 @@ impl GlobalSched {
         let capacity = max.checked_sub(local_sched_used + contracting).unwrap();
         let available_jobs = capacity.div_duration_f32(job_deadline) as usize;
 
-        let max = std::cmp::min(available_jobs, self.contractor.max_concurrency);
+        let max = std::cmp::min(
+            available_jobs,
+            self.contractor.semaphore.available_permits(),
+        );
 
         tracing::debug!("capacity: {capacity:?}, available_jobs: {available_jobs}, max: {max}",);
 
@@ -197,10 +200,7 @@ impl Controller {
     /// enqueue_ready
     ///
     pub async fn enqueue_job(&self, job: Job) {
-        self.command_sender
-            .send(Command::Contracted(job))
-            .await
-            .unwrap();
+        let _ = self.command_sender.send(Command::Contracted(job)).await;
     }
 
     pub async fn signal_no_job(&self) {

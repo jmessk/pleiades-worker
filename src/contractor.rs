@@ -43,19 +43,21 @@ impl Contractor {
         job_deadline: Duration,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
+        let semaphore = Arc::new(Semaphore::new(max_concurrency));
 
         let contractor = Self {
             client,
             data_manager_controller,
             command_receiver,
             max_concurrency,
-            semaphore: Arc::new(Semaphore::new(max_concurrency)),
+            semaphore: semaphore.clone(),
             job_deadline,
         };
 
         let controller = Controller {
             command_sender,
             max_concurrency,
+            semaphore,
         };
 
         (contractor, controller)
@@ -237,6 +239,7 @@ impl Contractor {
 pub struct Controller {
     command_sender: mpsc::Sender<Command>,
     pub max_concurrency: usize,
+    pub semaphore: Arc<Semaphore>,
 }
 
 impl Controller {
