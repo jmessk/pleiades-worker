@@ -1,4 +1,4 @@
-num_contractors: 32
+num_contractors: 16
 num_executors: 8
 num_cpus: 8
 policy: blocking

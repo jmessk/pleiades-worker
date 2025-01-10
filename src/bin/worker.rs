@@ -2,7 +2,7 @@ use clap::Parser;
 use pleiades_worker::{
     executor::Executor,
     helper::LocalSchedManager,
-    scheduler::{local_sched, GlobalSched, LocalSched},
+    scheduler::{self, local_sched, GlobalSched, LocalSched},
     Contractor, DataManager, Fetcher, PendingManager, Updater, WorkerIdManager,
 };
 use std::{
@@ -190,16 +190,20 @@ async fn worker(config: WorkerConfig) {
         global_sched.run().await;
     });
 
-    let (stop_notify_sender, stop_notify_receiver) = tokio::sync::watch::channel(());
-    join_set.spawn(save_cpu_usage(config.num_cpus, stop_notify_receiver));
+    let (stop_notify_sender, stop_notify_receiver) = tokio::sync::oneshot::channel();
+    join_set.spawn(save_cpu_usage(
+        config.num_cpus,
+        stop_notify_sender,
+        global_sched_controller,
+    ));
 
-    tokio::signal::ctrl_c().await.unwrap();
-    global_sched_controller.signal_shutdown_req().await;
-    let _ = stop_notify_sender.send(());
+    // tokio::signal::ctrl_c().await.unwrap();
+    // global_sched_controller.signal_shutdown_req().await;
+    // let _ = stop_notify_sender.send(());
+    let _ = stop_notify_receiver.await;
 
     drop(updater_controller);
     drop(pending_manager_controller);
-    drop(stop_notify_sender);
 
     join_set.join_all().await;
 }
@@ -246,7 +250,11 @@ impl WorkerConfig {
     }
 }
 
-async fn save_cpu_usage(num_use_cpus: usize, mut stop_notify: tokio::sync::watch::Receiver<()>) {
+async fn save_cpu_usage(
+    num_use_cpus: usize,
+    stop_notify: tokio::sync::oneshot::Sender<()>,
+    global_sched_controller: scheduler::global_sched::Controller,
+) {
     use chrono;
     use std::fs::File;
     use std::io::prelude::*;
@@ -270,12 +278,7 @@ async fn save_cpu_usage(num_use_cpus: usize, mut stop_notify: tokio::sync::watch
     let mut ticker = tokio::time::interval(Duration::from_millis(200));
     let mut counter = 0;
 
-    while {
-        tokio::select! {
-            _ = stop_notify.changed() => false,
-            _ = ticker.tick() => true,
-        }
-    } {
+    loop {
         system.refresh_cpu_usage();
         let cpu_list = system.cpus();
         let mut sum = 0;
@@ -292,13 +295,17 @@ async fn save_cpu_usage(num_use_cpus: usize, mut stop_notify: tokio::sync::watch
         writer.write_all(b"\n").unwrap();
         writer.flush().unwrap();
 
-        if 5 < counter && sum < 5 {
+        if 10 < counter && sum < 3 {
             tracing::info!("stop cpu usage monitoring: counter={counter}");
             break;
         }
 
         counter += 1;
+        ticker.tick().await;
     }
+
+    global_sched_controller.signal_shutdown_req().await;
+    let _ = stop_notify.send(());
 
     println!("cpu usage is saved to {file_name}");
 }
