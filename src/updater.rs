@@ -1,11 +1,12 @@
 use std::{
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
     data_manager,
+    metric::Metric,
     pleiades_type::{Job, JobStatus},
 };
 
@@ -26,6 +27,9 @@ pub struct Updater {
     // command_sender: mpsc::Sender<Command>,
     command_receiver: mpsc::Receiver<Command>,
 
+    enable_metrics: bool,
+    metric_sender: mpsc::Sender<Metric>,
+
     /// number of jobs currently being contracted
     max_concurrency: usize,
     semaphore: Arc<Semaphore>,
@@ -40,19 +44,26 @@ impl Updater {
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
         policy: &str,
+        enable_metrics: bool,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(128);
+        let (metric_sender, metric_receiver) = mpsc::channel(128);
 
         let updater = Self {
             client,
             data_manager_controller,
             command_receiver,
+            enable_metrics,
+            metric_sender,
             max_concurrency: 64,
             semaphore: Arc::new(Semaphore::new(64)),
             policy: policy.to_string(),
         };
 
-        let controller = Controller { command_sender };
+        let controller = Controller {
+            command_sender,
+            metric_receiver: Arc::new(Mutex::new(metric_receiver)),
+        };
 
         (updater, controller)
     }
@@ -63,7 +74,7 @@ impl Updater {
         tracing::info!("running");
 
         // edit
-        let mut join_set = tokio::task::JoinSet::new();
+        // let mut join_set = tokio::task::JoinSet::new();
         let mut first_instant = None;
         let mut end = Instant::now();
 
@@ -85,7 +96,7 @@ impl Updater {
                     end = Instant::now();
 
                     // tokio::spawn(async move {
-                    join_set.spawn(async move {
+                    tokio::spawn(async move {
                         // Self::task_update_job(client, data_manager_controller, request).await
                         let metric =
                             Self::task_update_job_metrics(client, data_manager_controller, request)
@@ -282,6 +293,7 @@ fn save_csv(
 #[derive(Clone)]
 pub struct Controller {
     command_sender: mpsc::Sender<Command>,
+    metric_receiver: Arc<Mutex<mpsc::Receiver<Metric>>>,
 }
 
 impl Controller {
@@ -305,6 +317,10 @@ impl Controller {
         }
 
         self.command_sender.blocking_send(request).unwrap();
+    }
+
+    pub async fn recv_metric(&mut self) -> Option<Metric> {
+        self.metric_receiver.lock().unwrap().recv().await
     }
 }
 

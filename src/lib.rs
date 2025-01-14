@@ -9,6 +9,7 @@ pub mod pleiades_type;
 pub mod runtime;
 pub mod scheduler;
 pub mod updater;
+pub mod metric;
 
 pub use contractor::Contractor;
 pub use data_manager::DataManager;
