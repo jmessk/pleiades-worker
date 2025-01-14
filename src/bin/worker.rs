@@ -181,10 +181,38 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
     //
     // /////
 
+    let mut worker_id_manager = WorkerIdManager::new(client, config.job_deadline).await;
+    worker_id_manager
+        .insert(
+            "default",
+            &[
+                "pleiades+example",
+                "js+compress",
+                "js+resize",
+                "js+fib",
+                "js+gpu",
+                "js+counter",
+            ],
+            config.job_deadline,
+        )
+        .await;
+    worker_id_manager
+        .insert(
+            "cpu",
+            &[
+                "pleiades+example",
+                "js+compress",
+                "js+resize",
+                "js+fib",
+                "js+gpu",
+                "js",
+            ],
+            config.job_deadline,
+        )
+        .await;
+
     // Initialize GlobalSched
     //
-    let worker_id_manager = WorkerIdManager::new(client, config.job_deadline).await;
-
     let (mut global_sched, global_sched_controller) = GlobalSched::new(
         contractor_controller,
         local_sched_manager,

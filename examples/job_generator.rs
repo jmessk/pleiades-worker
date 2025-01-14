@@ -46,7 +46,7 @@ async fn main() {
     let lambda_counter = {
         let script = std::fs::read("./examples/script/counter.js").unwrap();
         let blob = client.blob().new(script).await.unwrap();
-        blob.into_lambda("js+counter").await.unwrap()
+        blob.into_lambda("js+cpu").await.unwrap()
     };
     //
     // /////

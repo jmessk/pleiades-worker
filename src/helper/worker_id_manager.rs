@@ -13,20 +13,20 @@ impl WorkerIdManager {
             set: HashMap::new(),
         };
 
-        manager
-            .insert(
-                "default",
-                &[
-                    "pleiades+example",
-                    "js+compress",
-                    "js+resize",
-                    "js+fib",
-                    "js+gpu",
-                    "js+counter",
-                ],
-                default_job_deadline,
-            )
-            .await;
+        // manager
+        //     .insert(
+        //         "default",
+        //         &[
+        //             "pleiades+example",
+        //             "js+compress",
+        //             "js+resize",
+        //             "js+fib",
+        //             "js+gpu",
+        //             "js+counter",
+        //         ],
+        //         default_job_deadline,
+        //     )
+        //     .await;
         manager
     }
 
