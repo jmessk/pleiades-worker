@@ -1,4 +1,5 @@
 use clap::Parser;
+use pleiades_worker::scheduler::global_sched;
 use pleiades_worker::updater;
 use std::io::prelude::*;
 use std::{
@@ -9,7 +10,6 @@ use std::{
     time::Duration,
 };
 use tokio::task::JoinSet;
-// use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt};
 
 use pleiades_worker::{
     executor::Executor,
@@ -75,7 +75,7 @@ fn main() {
             static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
             let count = CORE_COUNT.load(std::sync::atomic::Ordering::SeqCst);
 
-            // println!("count: {count}, id: {id}");
+            // println!("count: {count}");
             if count < num_tokio_workers {
                 let id =
                     num_cores - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) - 1;
@@ -93,11 +93,14 @@ fn main() {
         .build()
         .unwrap();
 
-    runtime.block_on(worker(args, config));
+    runtime.block_on(async move {
+        worker(args, config).await.join_all().await;
+        // tokio::time::sleep(Duration::from_secs(10)).await;
+    });
     // worker(config).await;
 }
 
-async fn worker(args: Arg, config: WorkerConfig) {
+async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
     let pleiades_url = std::env::var("PLEIADES_URL").unwrap();
     let client = Arc::new(pleiades_api::Client::try_new(&pleiades_url).unwrap());
     println!("{:?}", client.ping().await.unwrap());
@@ -208,7 +211,6 @@ async fn worker(args: Arg, config: WorkerConfig) {
         let dir = PathBuf::from(format!("./metrics/{timestamp}"));
         std::fs::create_dir_all(&dir).unwrap();
 
-        let updater_controller = updater_controller.clone();
         let (stop_notify_sender, stop_notify_receiver) = tokio::sync::watch::channel(());
 
         let cpu_usage = tokio::spawn(save_cpu_usage(
@@ -216,25 +218,28 @@ async fn worker(args: Arg, config: WorkerConfig) {
             config.num_cpus,
             stop_notify_receiver,
         ));
-        let elapsed = save_metrics(dir.clone(), updater_controller, num_iteration).await;
+
+        let summary = save_metrics(
+            dir.clone(),
+            global_sched_controller.clone(),
+            updater_controller,
+            num_iteration,
+        )
+        .await;
+
         stop_notify_sender.send(()).unwrap();
         cpu_usage.await.unwrap();
-        save_meta(dir.clone(), config, elapsed.unwrap_or(Duration::ZERO)).await;
+        save_summary(dir.clone(), config, summary).await;
+
+        println!("metrics are saved to {}", dir.to_str().unwrap());
     } else {
         tokio::signal::ctrl_c().await.unwrap();
+        global_sched_controller.signal_shutdown_req().await;
     }
     //
     // /////
 
-    // tokio::signal::ctrl_c().await.unwrap();
-    global_sched_controller.signal_shutdown_req().await;
-    // let _ = stop_notify_receiver.changed().await;
-    // let _ = stop_notify_receiver.await;
-
-    drop(updater_controller);
-    drop(pending_manager_controller);
-
-    join_set.join_all().await;
+    join_set
 }
 
 #[derive(Debug, clap::Parser)]
@@ -282,23 +287,35 @@ impl WorkerConfig {
     }
 }
 
-async fn save_meta(dir: PathBuf, config: WorkerConfig, elapsed: Duration) {
-    let file = File::create(dir.join("meta.yml")).unwrap();
+async fn save_summary(
+    dir: PathBuf,
+    config: WorkerConfig,
+    (elapsed, finished, cancelled): (Duration, u64, u64),
+) {
+    let file = File::create(dir.join("summary.yml")).unwrap();
     let mut writer = BufWriter::new(file);
 
     writer
         .write_all(serde_yaml::to_string(&config).unwrap().as_bytes())
         .unwrap();
     writer
-        .write_all(format!("elapsed: {}\n", elapsed.as_millis()).as_bytes())
+        .write_all(
+            format!(
+                "---\nelapsed: {elapsed}\nnum_jobs: {sum}\nfinished: {finished}\ncancelled: {cancelled}\n",
+                elapsed = elapsed.as_millis(),
+                sum = finished + cancelled,
+            )
+            .as_bytes(),
+        )
         .unwrap();
 }
 
 async fn save_metrics(
     dir: PathBuf,
+    global_sched_controller: global_sched::Controller,
     mut updater_controller: updater::Controller,
     num_iteration: usize,
-) -> Option<Duration> {
+) -> (Duration, u64, u64) {
     let file = File::create(dir.join("metrics.csv")).unwrap();
     let mut file = BufWriter::new(file);
 
@@ -308,6 +325,8 @@ async fn save_metrics(
     let mut first_instant = None;
     let mut last_instant = None;
     let mut count = 0;
+    let mut finished = 0;
+    let mut canceled = 0;
 
     // while let Some(metric) = updater_controller.recv_metric().await {
     while let Some(metric) = tokio::select! {
@@ -324,6 +343,12 @@ async fn save_metrics(
             consumed,
         } = metric;
 
+        if status == "Finished" {
+            finished += 1;
+        } else if status == "Canceled" {
+            canceled += 1;
+        }
+
         if first_instant.is_none() {
             first_instant = Some(start);
         } else if let Some(first) = first_instant {
@@ -332,7 +357,14 @@ async fn save_metrics(
             }
         }
 
-        last_instant = Some(end);
+        // last_instant = Some(end);
+        if last_instant.is_none() {
+            last_instant = Some(end);
+        } else if let Some(last) = last_instant {
+            if last < end {
+                last_instant = Some(end);
+            }
+        }
 
         file.write_all(
             format!(
@@ -351,7 +383,12 @@ async fn save_metrics(
         }
     }
 
-    last_instant.map(|last| last - first_instant.unwrap())
+    global_sched_controller.signal_shutdown_req().await;
+    let elapsed = last_instant
+        .map(|last| last - first_instant.unwrap())
+        .unwrap_or(Duration::ZERO);
+
+    (elapsed, finished, canceled)
 }
 
 async fn save_cpu_usage(

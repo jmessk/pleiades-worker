@@ -99,25 +99,27 @@ async fn main() {
     let mut ticker = tokio::time::interval(INTERVAL);
 
     for _i in 0..args.num_iteration {
-        join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_s));
-        ticker.tick().await;
+        // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_s));
+        // ticker.tick().await;
+
         // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_m));
         // ticker.tick().await;
         // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_l));
         // ticker.tick().await;
 
-        join_set.spawn(invoke_helper(&lambda_resize, &blob_images_s));
-        ticker.tick().await;
+        // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_s));
+        // ticker.tick().await;
+
         // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_m));
         // ticker.tick().await;
         // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_l));
         // ticker.tick().await;
 
-        join_set.spawn(invoke_helper(&lambda_fib, &blob_blank));
-        ticker.tick().await;
+        // join_set.spawn(invoke_helper(&lambda_fib, &blob_blank));
+        // ticker.tick().await;
 
-        join_set.spawn(invoke_helper(&lambda_openpose, &blob_images_mini));
-        ticker.tick().await;
+        // join_set.spawn(invoke_helper(&lambda_openpose, &blob_images_mini));
+        // ticker.tick().await;
 
         join_set.spawn(invoke_helper(&lambda_counter, &blob_blank));
     }

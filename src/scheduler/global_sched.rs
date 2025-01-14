@@ -85,6 +85,7 @@ impl GlobalSched {
     async fn schedule_shutdown(&self) {
         let scheduler_controller = self.global_sched.clone();
         let semaphore = self.semaphore.clone();
+        // println!("signal_shutdown {}", semaphore.available_permits());
 
         tokio::spawn(async move {
             let _ = semaphore.acquire_many(Self::MAX_CONCURRENCY as u32).await;
@@ -98,14 +99,14 @@ impl GlobalSched {
     ///
     ///
     async fn schedule_contract(&self, worker_id: &str) {
+        let global_sched = self.global_sched.clone();
+        let permit = self.semaphore.clone().acquire_owned().await.unwrap();
+
         let handle = self
             .contractor
             .try_contract(worker_id.to_string())
             .await
             .unwrap();
-
-        let global_sched = self.global_sched.clone();
-        let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
         tokio::spawn(async move {
             let response = handle.recv().await;
