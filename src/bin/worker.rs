@@ -1,17 +1,23 @@
 use clap::Parser;
-use pleiades_worker::{
-    executor::Executor,
-    helper::LocalSchedManager,
-    scheduler::{self, local_sched, GlobalSched, LocalSched},
-    Contractor, DataManager, Fetcher, PendingManager, Updater, WorkerIdManager,
-};
+use pleiades_worker::updater;
+use std::io::prelude::*;
 use std::{
+    fs::File,
     io::BufWriter,
+    path::PathBuf,
     sync::{atomic::AtomicUsize, Arc},
     time::Duration,
 };
 use tokio::task::JoinSet;
 // use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt};
+
+use pleiades_worker::{
+    executor::Executor,
+    helper::LocalSchedManager,
+    metric::Metric,
+    scheduler::{local_sched, GlobalSched, LocalSched},
+    Contractor, DataManager, Fetcher, PendingManager, Updater, WorkerIdManager,
+};
 
 // #[tokio::main(flavor = "multi_thread")]
 // async fn main() {
@@ -26,7 +32,7 @@ fn main() {
     //
     let args = Arg::parse();
     let config = match args.config_path {
-        Some(path) => WorkerConfig::from_path(path),
+        Some(ref path) => WorkerConfig::from_path(path),
         None => WorkerConfig::default(),
     };
 
@@ -87,11 +93,11 @@ fn main() {
         .build()
         .unwrap();
 
-    runtime.block_on(worker(config));
+    runtime.block_on(worker(args, config));
     // worker(config).await;
 }
 
-async fn worker(config: WorkerConfig) {
+async fn worker(args: Arg, config: WorkerConfig) {
     let pleiades_url = std::env::var("PLEIADES_URL").unwrap();
     let client = Arc::new(pleiades_api::Client::try_new(&pleiades_url).unwrap());
     println!("{:?}", client.ping().await.unwrap());
@@ -106,11 +112,8 @@ async fn worker(config: WorkerConfig) {
         config.num_contractors,
         config.job_deadline,
     );
-    let (mut updater, updater_controller) = Updater::new(
-        client.clone(),
-        data_manager_controller.clone(),
-        &config.policy,
-    );
+    let (mut updater, updater_controller) =
+        Updater::new(client.clone(), data_manager_controller.clone(), true);
     let (mut pending_manager, pending_manager_controller) =
         PendingManager::new(data_manager_controller);
     //
@@ -189,17 +192,43 @@ async fn worker(config: WorkerConfig) {
     join_set.spawn(async move {
         global_sched.run().await;
     });
+    //
+    // /////
 
-    let (stop_notify_sender, mut stop_notify_receiver) = tokio::sync::watch::channel(());
-    join_set.spawn(save_cpu_usage(
-        config.num_cpus,
-        stop_notify_sender,
-        global_sched_controller,
-    ));
+    // metrics
+    //
+    // let (stop_notify_sender, mut stop_notify_receiver) = tokio::sync::watch::channel(());
+    // join_set.spawn(save_cpu_usage(
+    //     config.num_cpus,
+    //     stop_notify_sender,
+    //     global_sched_controller,
+    // ));
+    if let Some(num_iteration) = args.num_iteration {
+        let timestamp = chrono::Local::now().format("%Y-%m%d-%H%M%S");
+        let dir = PathBuf::from(format!("./metrics/{timestamp}"));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let updater_controller = updater_controller.clone();
+        let (stop_notify_sender, stop_notify_receiver) = tokio::sync::watch::channel(());
+
+        let cpu_usage = tokio::spawn(save_cpu_usage(
+            dir.clone(),
+            config.num_cpus,
+            stop_notify_receiver,
+        ));
+        let elapsed = save_metrics(dir.clone(), updater_controller, num_iteration).await;
+        stop_notify_sender.send(()).unwrap();
+        cpu_usage.await.unwrap();
+        save_meta(dir.clone(), config, elapsed.unwrap_or(Duration::ZERO)).await;
+    } else {
+        tokio::signal::ctrl_c().await.unwrap();
+    }
+    //
+    // /////
 
     // tokio::signal::ctrl_c().await.unwrap();
-    // global_sched_controller.signal_shutdown_req().await;
-    let _ = stop_notify_receiver.changed().await;
+    global_sched_controller.signal_shutdown_req().await;
+    // let _ = stop_notify_receiver.changed().await;
     // let _ = stop_notify_receiver.await;
 
     drop(updater_controller);
@@ -212,11 +241,14 @@ async fn worker(config: WorkerConfig) {
 struct Arg {
     #[clap(long = "config")]
     config_path: Option<String>,
+
+    #[clap(long = "num_iteration", short = 'n')]
+    num_iteration: Option<usize>,
 }
 
 use duration_str::deserialize_duration;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 struct WorkerConfig {
     num_contractors: usize,
     num_executors: usize,
@@ -234,7 +266,7 @@ impl Default for WorkerConfig {
             num_contractors: 1,
             num_executors: 1,
             num_cpus: 1,
-            policy: "cooperative_pipeline".to_string(),
+            policy: "cooperative".to_string(),
             exec_deadline: Duration::from_millis(300),
             job_deadline: Duration::from_millis(100),
         }
@@ -250,23 +282,87 @@ impl WorkerConfig {
     }
 }
 
+async fn save_meta(dir: PathBuf, config: WorkerConfig, elapsed: Duration) {
+    let file = File::create(dir.join("meta.yml")).unwrap();
+    let mut writer = BufWriter::new(file);
+
+    writer
+        .write_all(serde_yaml::to_string(&config).unwrap().as_bytes())
+        .unwrap();
+    writer
+        .write_all(format!("elapsed: {}\n", elapsed.as_millis()).as_bytes())
+        .unwrap();
+}
+
+async fn save_metrics(
+    dir: PathBuf,
+    mut updater_controller: updater::Controller,
+    num_iteration: usize,
+) -> Option<Duration> {
+    let file = File::create(dir.join("metrics.csv")).unwrap();
+    let mut file = BufWriter::new(file);
+
+    file.write_all(b"id,runtime,status,elapsed,consumed\n")
+        .unwrap();
+
+    let mut first_instant = None;
+    let mut last_instant = None;
+    let mut count = 0;
+
+    // while let Some(metric) = updater_controller.recv_metric().await {
+    while let Some(metric) = tokio::select! {
+        metric = updater_controller.recv_metric() => metric,
+        _ = tokio::signal::ctrl_c() => None,
+    } {
+        let Metric {
+            id,
+            runtime,
+            status,
+            start,
+            end,
+            elapsed,
+            consumed,
+        } = metric;
+
+        if first_instant.is_none() {
+            first_instant = Some(start);
+        } else if let Some(first) = first_instant {
+            if start < first {
+                first_instant = Some(start);
+            }
+        }
+
+        last_instant = Some(end);
+
+        file.write_all(
+            format!(
+                "{id},{runtime},{status},{elapsed},{consumed}\n",
+                elapsed = elapsed.as_millis(),
+                consumed = consumed.as_millis(),
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        file.flush().unwrap();
+
+        count += 1;
+        if count == num_iteration {
+            break;
+        }
+    }
+
+    last_instant.map(|last| last - first_instant.unwrap())
+}
+
 async fn save_cpu_usage(
+    dir: PathBuf,
     num_use_cpus: usize,
-    stop_notify: tokio::sync::watch::Sender<()>,
-    scheduler_controller: scheduler::global_sched::Controller,
+    mut stop_notifier: tokio::sync::watch::Receiver<()>,
 ) {
-    use chrono;
-    use std::fs::File;
-    use std::io::prelude::*;
-
-    std::fs::create_dir_all("./cpu_usage").unwrap();
-
-    let file_name = format!(
-        "./cpu_usage/{}.csv",
-        chrono::Local::now().format("%Y-%m%d-%H%M%S")
-    );
+    let file_name = dir.join("cpu_usage.csv");
     let file = File::create(&file_name).unwrap();
     let mut writer = BufWriter::new(file);
+
     writer.write_all(b"timestamp").unwrap();
     (0..num_use_cpus).for_each(|i| {
         writer.write_all(format!(",core_{i}").as_bytes()).unwrap();
@@ -276,17 +372,17 @@ async fn save_cpu_usage(
     let mut system = sysinfo::System::new_all();
 
     let mut ticker = tokio::time::interval(Duration::from_millis(200));
-    let mut counter = 0;
+    let mut counter = 0u64;
 
     while {
         tokio::select! {
-            // _ = stop_notify.changed() => false,
+            _ = stop_notifier.changed() => false,
             _ = ticker.tick() => true,
         }
     } {
         system.refresh_cpu_usage();
         let cpu_list = system.cpus();
-        let mut sum = 0;
+        // let mut sum = 0;
 
         writer.write_all(format!("{counter}").as_bytes()).unwrap();
         for i in 0..num_use_cpus {
@@ -294,23 +390,22 @@ async fn save_cpu_usage(
             let usage = cpu.cpu_usage() as u8;
             writer.write_all(format!(",{}", usage).as_bytes()).unwrap();
 
-            sum += usage;
+            // sum += usage;
         }
 
         writer.write_all(b"\n").unwrap();
         writer.flush().unwrap();
 
-        if 10 < counter && sum < 1 {
-            tracing::info!("stop cpu usage monitoring: counter={counter}");
-            break;
-        }
+        // if 10 < counter && sum < 1 {
+        //     tracing::info!("stop cpu usage monitoring: counter={counter}");
+        //     break;
+        // }
 
         counter += 1;
     }
 
-    tokio::time::sleep(Duration::from_secs(20)).await;
-    stop_notify.send(()).unwrap();
-    scheduler_controller.signal_shutdown_req().await;
+    // tokio::time::sleep(Duration::from_secs(20)).await;
+    // stop_notify.send(()).unwrap();
 
-    println!("cpu usage is saved to {file_name}");
+    // println!("cpu usage is saved to {file_name}");
 }

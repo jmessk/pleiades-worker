@@ -85,7 +85,7 @@ struct Arg {
     #[clap(long = "script", short = 's')]
     script_path: String,
 
-    #[clap(long = "blob", short = 'i')]
+    #[clap(long = "input", short = 'i')]
     input_path: Option<String>,
 
     #[clap(long = "num", short = 'n', default_value = "10")]

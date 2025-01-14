@@ -38,7 +38,7 @@ async fn main() {
         8,
         Duration::from_millis(100),
     );
-    let (mut updater, updater_controller) = Updater::new(client.clone(), data_manager_controller, "");
+    let (mut updater, updater_controller) = Updater::new(client.clone(), data_manager_controller, false);
 
     let fetcher = tokio::spawn(async move {
         fetcher.run().await;

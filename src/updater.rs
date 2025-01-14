@@ -1,8 +1,8 @@
 use std::{
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{mpsc, Mutex, Semaphore};
 
 use crate::{
     data_manager,
@@ -33,8 +33,6 @@ pub struct Updater {
     /// number of jobs currently being contracted
     max_concurrency: usize,
     semaphore: Arc<Semaphore>,
-
-    policy: String,
 }
 
 impl Updater {
@@ -43,7 +41,6 @@ impl Updater {
     pub fn new(
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
-        policy: &str,
         enable_metrics: bool,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(128);
@@ -57,7 +54,6 @@ impl Updater {
             metric_sender,
             max_concurrency: 64,
             semaphore: Arc::new(Semaphore::new(64)),
-            policy: policy.to_string(),
         };
 
         let controller = Controller {
@@ -73,36 +69,27 @@ impl Updater {
     pub async fn run(&mut self) {
         tracing::info!("running");
 
-        // edit
-        // let mut join_set = tokio::task::JoinSet::new();
-        let mut first_instant = None;
-        let mut end = Instant::now();
-
         while let Some(command) = self.command_receiver.recv().await {
             tracing::trace!("updating job");
 
             // clone fields to bind
             let client = self.client.clone();
             let data_manager_controller = self.data_manager_controller.clone();
+            let metric_sender = self.metric_sender.clone();
+            let enable_metrics = self.enable_metrics;
             let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
             // new task
             match command {
                 Command::Update(request) => {
-                    if first_instant.is_none() {
-                        first_instant = Some(request.job.contracted_at);
-                    }
-
-                    end = Instant::now();
-
-                    // tokio::spawn(async move {
                     tokio::spawn(async move {
-                        // Self::task_update_job(client, data_manager_controller, request).await
                         let metric =
                             Self::task_update_job_metrics(client, data_manager_controller, request)
                                 .await;
+                        if enable_metrics {
+                            metric_sender.send(metric).await.unwrap();
+                        }
                         drop(permit);
-                        metric
                     });
                 }
             }
@@ -111,18 +98,18 @@ impl Updater {
         self.wait_for_shutdown().await;
 
         // edit
-        let metrics = join_set.join_all().await;
-        match first_instant {
-            Some(instant) => {
-                let summary = end - instant;
-                tracing::info!("summary: {summary:?}, {} jobs", metrics.len());
-                // tracing::info!(summary, metrics.len());
-                save_csv(summary, metrics, &self.policy);
-            }
-            None => {
-                tracing::info!("finished 0 job");
-            }
-        };
+        // let metrics = join_set.join_all().await;
+        // match first_instant {
+        //     Some(instant) => {
+        //         let summary = end - instant;
+        //         tracing::info!("summary: {summary:?}, {} jobs", metrics.len());
+        //         // tracing::info!(summary, metrics.len());
+        //         save_csv(summary, metrics, &self.policy);
+        //     }
+        //     None => {
+        //         tracing::info!("finished 0 job");
+        //     }
+        // };
     }
 
     async fn wait_for_shutdown(&self) {
@@ -188,7 +175,7 @@ impl Updater {
         client: Arc<pleiades_api::Client>,
         data_manager_controller: data_manager::Controller,
         request: update::Request,
-    ) -> (String, String, &'static str, Duration, Duration) {
+    ) -> Metric {
         match request.job.status {
             JobStatus::Finished(output) => {
                 let output = output.unwrap_or_else(bytes::Bytes::new);
@@ -209,13 +196,15 @@ impl Updater {
 
                 tracing::debug!("updated finished job");
 
-                (
-                    request.job.id,
-                    request.job.lambda.runtime,
-                    "Finished",
-                    request.job.contracted_at.elapsed(),
-                    request.job.consumed,
-                )
+                Metric {
+                    id: request.job.id,
+                    runtime: request.job.lambda.runtime,
+                    status: "Finished".to_string(),
+                    start: request.job.contracted_at,
+                    end: Instant::now(),
+                    elapsed: request.job.contracted_at.elapsed(),
+                    consumed: request.job.consumed,
+                }
             }
             JobStatus::Cancelled => {
                 let update_request = pleiades_api::api::job::update::Request::builder()
@@ -231,20 +220,29 @@ impl Updater {
 
                 tracing::debug!("updated cancelled job");
 
-                (
-                    request.job.id,
-                    request.job.lambda.runtime,
-                    "Cancelled",
-                    request.job.contracted_at.elapsed(),
-                    request.job.consumed,
-                )
+                // (
+                //     request.job.id,
+                //     request.job.lambda.runtime,
+                //     "Cancelled",
+                //     request.job.contracted_at.elapsed(),
+                //     request.job.consumed,
+                // )
+                Metric {
+                    id: request.job.id,
+                    runtime: request.job.lambda.runtime,
+                    status: "Cancelled".to_string(),
+                    start: request.job.contracted_at,
+                    end: Instant::now(),
+                    elapsed: request.job.contracted_at.elapsed(),
+                    consumed: request.job.consumed,
+                }
             }
             _ => unreachable!(),
         }
     }
 }
 
-fn save_csv(
+fn _save_csv(
     elapsed: Duration,
     metrics: Vec<(String, String, &'static str, Duration, Duration)>,
     policy: &str,
@@ -318,9 +316,8 @@ impl Controller {
 
         self.command_sender.blocking_send(request).unwrap();
     }
-
     pub async fn recv_metric(&mut self) -> Option<Metric> {
-        self.metric_receiver.lock().unwrap().recv().await
+        self.metric_receiver.lock().await.recv().await
     }
 }
 
@@ -468,7 +465,8 @@ mod tests {
             16,
             Duration::from_millis(100),
         );
-        let (mut updater, _updater_api) = Updater::new(client.clone(), data_manager_controller, "");
+        let (mut updater, _updater_api) =
+            Updater::new(client.clone(), data_manager_controller, false);
 
         tokio::spawn(async move {
             fetcher.run().await;
