@@ -200,12 +200,23 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
         .insert(
             "cpu",
             &[
+                "js+resize",
+                "js+fib",
+                "js+counter",
+            ],
+            config.job_deadline,
+        )
+        .await;
+    worker_id_manager
+        .insert(
+            "other",
+            &[
                 "pleiades+example",
                 "js+compress",
                 "js+resize",
                 "js+fib",
                 "js+gpu",
-                "js",
+                "js+counter",
             ],
             config.job_deadline,
         )
