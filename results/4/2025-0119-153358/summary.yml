@@ -1,0 +1,25 @@
+num_contractors: 16
+num_executors: 24
+num_cpus: 24
+policy: blocking
+exec_deadline:
+  secs: 10
+  nanos: 0
+job_deadline:
+  secs: 5
+  nanos: 0
+cpu_usage_freq:
+  secs: 3
+  nanos: 0
+---
+elapsed: 67296
+num_jobs: 300
+finished: 300
+cancelled: 0
+each_avr:
+  - test1: 8530.72
+  - test2: 9531.16
+  - test3: 10240.84
+  - test4: 8418
+  - test5: 9058.1
+  - test6: 9935.24

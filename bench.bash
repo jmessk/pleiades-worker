@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for item in blocking cooperative-2 cooperative-3 cooperative-4; do
+for item in blocking-2; do
     echo "Running $item"
 
     for i in {1..3}; do
