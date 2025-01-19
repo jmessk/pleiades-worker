@@ -1,11 +1,11 @@
 #!/bin/bash
 
-for item in cooperative blocking overloaded; do
+for item in blocking cooperative-2 cooperative-3 cooperative-4; do
     echo "Running $item"
 
-    for i in {1..1}; do
-        ./run_generator.bash -n 200
-        ./run_worker.bash --config ./config/$item.yml -n 600
+    for i in {1..3}; do
+        ./run_generator.bash -n 50
+        ./run_worker.bash --config ./config/$item.yml -n 300
     done
 done
 

@@ -239,7 +239,7 @@ pub fn busy(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
 
     let start = std::time::Instant::now();
     while start.elapsed().as_millis() < ms {
-        for _ in 0..10000 {
+        for _ in 0..1000 {
             count += 1;
         }
     }

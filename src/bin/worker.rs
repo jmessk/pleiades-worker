@@ -69,27 +69,24 @@ fn main() {
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .worker_threads(num_tokio_workers)
-        // .max_blocking_threads(num_executors)
-        .on_thread_start(move || {
-            static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
-            let count = CORE_COUNT.load(std::sync::atomic::Ordering::SeqCst);
-
-            // println!("count: {count}");
-            if count < num_tokio_workers {
-                let id =
-                    num_cores - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) - 1;
-
-                core_affinity::set_for_current(core_affinity::CoreId { id });
-                println!("tokio worker is set to core {}", id);
-            } else if count < num_tokio_workers + num_executors {
-                let id = (CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-                    - num_tokio_workers)
-                    % num_use_cores;
-                core_affinity::set_for_current(core_affinity::CoreId { id });
-                println!("executor is set to core {}", id);
-            }
-        })
+        // .worker_threads(num_tokio_workers)
+        // .on_thread_start(move || {
+        //     static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
+        //     let count = CORE_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+        //     // println!("count: {count}");
+        //     if count < num_tokio_workers {
+        //         let id =
+        //             num_cores - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) - 1;
+        //         core_affinity::set_for_current(core_affinity::CoreId { id });
+        //         println!("tokio worker is set to core {}", id);
+        //     } else if count < num_tokio_workers + num_executors {
+        //         let id = (CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        //             - num_tokio_workers)
+        //             % num_use_cores;
+        //         core_affinity::set_for_current(core_affinity::CoreId { id });
+        //         println!("executor is set to core {}", id);
+        //     }
+        // })
         .build()
         .unwrap();
 
@@ -182,34 +179,9 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
     // /////
 
     let mut worker_id_manager = WorkerIdManager::new(client, config.job_deadline).await;
-    worker_id_manager
-        .insert(
-            "default",
-            &[
-                "pleiades+example",
-                "js+compress",
-                "js+resize",
-                "js+fib",
-                "js+gpu",
-                "js+counter",
-            ],
-            config.job_deadline,
-        )
-        .await;
     // worker_id_manager
     //     .insert(
-    //         "cpu",
-    //         &[
-    //             "js+resize",
-    //             "js+fib",
-    //             "js+counter",
-    //         ],
-    //         config.job_deadline,
-    //     )
-    //     .await;
-    // worker_id_manager
-    //     .insert(
-    //         "other",
+    //         "default",
     //         &[
     //             "pleiades+example",
     //             "js+compress",
@@ -221,6 +193,20 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
     //         config.job_deadline,
     //     )
     //     .await;
+    worker_id_manager
+        .insert(
+            "default",
+            &[
+                "test1_0-0",
+                "test2_1-0",
+                "test3_1-1",
+                "test4_1-0",
+                "test5_1-1",
+                "test6_0-0",
+            ],
+            config.job_deadline,
+        )
+        .await;
 
     // Initialize GlobalSched
     //
@@ -333,7 +319,7 @@ impl WorkerConfig {
 async fn save_summary(
     dir: PathBuf,
     config: WorkerConfig,
-    (elapsed, finished, cancelled): (Duration, u64, u64),
+    (elapsed, finished, cancelled, each_arv): (Duration, u64, u64, Vec<f64>),
 ) {
     let file = File::create(dir.join("summary.yml")).unwrap();
     let mut writer = BufWriter::new(file);
@@ -344,13 +330,26 @@ async fn save_summary(
     writer
         .write_all(
             format!(
-                "---\nelapsed: {elapsed}\nnum_jobs: {sum}\nfinished: {finished}\ncancelled: {cancelled}\n",
+                r"---
+elapsed: {elapsed}
+num_jobs: {sum}
+finished: {finished}
+cancelled: {cancelled}
+",
                 elapsed = elapsed.as_millis(),
                 sum = finished + cancelled,
             )
             .as_bytes(),
         )
         .unwrap();
+
+    writer.write_all("each_avr:\n".as_bytes()).unwrap();
+    each_arv.iter().enumerate().for_each(|(i, &x)| {
+        let i = i + 1;
+        writer
+            .write_all(format!("  - test{i}: {x}\n").as_bytes())
+            .unwrap();
+    });
 }
 
 async fn save_metrics(
@@ -358,7 +357,7 @@ async fn save_metrics(
     global_sched_controller: global_sched::Controller,
     mut updater_controller: updater::Controller,
     num_iteration: usize,
-) -> (Duration, u64, u64) {
+) -> (Duration, u64, u64, Vec<f64>) {
     let file = File::create(dir.join("metrics.csv")).unwrap();
     let mut file = BufWriter::new(file);
 
@@ -370,6 +369,10 @@ async fn save_metrics(
     let mut count = 0;
     let mut finished = 0;
     let mut canceled = 0;
+
+    //
+    let mut each_sum = [0u64; 6];
+    //
 
     // while let Some(metric) = updater_controller.recv_metric().await {
     while let Some(metric) = tokio::select! {
@@ -409,6 +412,12 @@ async fn save_metrics(
             }
         }
 
+        //
+        let runt = runtime.split('_').collect::<Vec<&str>>()[0];
+        let index = runt.chars().last().unwrap().to_digit(10).unwrap() as usize - 1;
+        each_sum[index] += elapsed.as_millis() as u64;
+        //
+
         file.write_all(
             format!(
                 "{id},{runtime},{status},{elapsed},{consumed}\n",
@@ -431,7 +440,14 @@ async fn save_metrics(
         .map(|last| last - first_instant.unwrap())
         .unwrap_or(Duration::ZERO);
 
-    (elapsed, finished, canceled)
+    //
+    let each_avr = each_sum
+        .iter()
+        .map(|&x| x as f64 / (num_iteration as f64 / 6.0))
+        .collect::<Vec<f64>>();
+    //
+
+    (elapsed, finished, canceled, each_avr)
 }
 
 async fn save_cpu_usage(
@@ -440,6 +456,8 @@ async fn save_cpu_usage(
     mut stop_notifier: tokio::sync::watch::Receiver<()>,
     freq: Duration,
 ) {
+    let num_use_cpus = 1;
+
     let file_name = dir.join("cpu_usage.csv");
     let file = File::create(&file_name).unwrap();
     let mut writer = BufWriter::new(file);
@@ -462,13 +480,14 @@ async fn save_cpu_usage(
         }
     } {
         system.refresh_cpu_usage();
-        let cpu_list = system.cpus();
+        // let cpu_list = system.cpus();
         // let mut sum = 0;
 
         writer.write_all(format!("{counter}").as_bytes()).unwrap();
         for i in 0..num_use_cpus {
-            let cpu = cpu_list.get(i).unwrap();
-            let usage = cpu.cpu_usage() as u8;
+            // let cpu = cpu_list.get(i).unwrap();
+            // let usage = cpu.cpu_usage() as u8;
+            let usage = system.global_cpu_usage() as u8;
             writer.write_all(format!(",{}", usage).as_bytes()).unwrap();
 
             // sum += usage;

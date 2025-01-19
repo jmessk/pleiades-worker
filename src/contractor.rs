@@ -223,6 +223,15 @@ impl Contractor {
             contracted_at,
         };
 
+        //
+        let splited = job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
+            .split("-")
+            .collect::<Vec<&str>>();
+        let sleep_time = splited[0].parse::<u64>().unwrap();
+        // println!("sleep_time: {}", sleep_time);
+        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+        //
+
         request
             .response_sender
             .send(contract::Response {

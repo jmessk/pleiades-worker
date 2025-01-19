@@ -1,7 +1,7 @@
 num_contractors: 16
-num_executors: 8
-num_cpus: 8
+num_executors: 24
+num_cpus: 24
 policy: cooperative
 exec_deadline: 20s
 job_deadline: 5s
-cpu_usage_freq: 1s
+cpu_usage_freq: 3s

@@ -1,0 +1,10 @@
+const max = 5000;
+
+async function fetch(input) {
+    busy(max);
+
+    console.log("test1 done");
+    return "";
+}
+
+export default fetch;

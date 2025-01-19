@@ -39,90 +39,42 @@ async fn main() {
 
     // lambda
     //
-    let lambda_test = {
-        let script = std::fs::read("./examples/script/test.js").unwrap();
+    let lambda_1 = {
+        let script = std::fs::read("./examples/script-test/test1_0-0.js").unwrap();
         let blob = client.blob().new(script).await.unwrap();
-        blob.into_lambda("pleiades+example").await.unwrap()
-    };
-    let lambda_compress = {
-        let script = std::fs::read("./examples/script/compress.js").unwrap();
+        blob.into_lambda("test1_0-0").await.unwrap()
+    };    
+    let lambda_2 = {
+        let script = std::fs::read("./examples/script-test/test2_1-0.js").unwrap();
         let blob = client.blob().new(script).await.unwrap();
-        blob.into_lambda("js+compress").await.unwrap()
+        blob.into_lambda("test2_1-0").await.unwrap()
     };
-    let lambda_resize = {
-        let script = std::fs::read("./examples/script/resize.js").unwrap();
+    let lambda_3 = {
+        let script = std::fs::read("./examples/script-test/test3_1-1.js").unwrap();
         let blob = client.blob().new(script).await.unwrap();
-        blob.into_lambda("js+resize").await.unwrap()
+        blob.into_lambda("test3_1-1").await.unwrap()
     };
-    // let lambda_fib = {
-    //     let script = std::fs::read("./examples/script/fib.js").unwrap();
-    //     let blob = client.blob().new(script).await.unwrap();
-    //     blob.into_lambda("js+fib").await.unwrap()
-    // };
-    let lambda_openpose = {
-        let script = std::fs::read("./examples/script/openpose.js").unwrap();
+    let lambda_4 = {
+        let script = std::fs::read("./examples/script-test/test4_1-0.js").unwrap();
         let blob = client.blob().new(script).await.unwrap();
-        blob.into_lambda("js+gpu").await.unwrap()
+        blob.into_lambda("test4_1-0").await.unwrap()
     };
-    // let lambda_counter = {
-    //     let script = std::fs::read("./examples/script/counter.js").unwrap();
-    //     let blob = client.blob().new(script).await.unwrap();
-    //     blob.into_lambda("js+counter").await.unwrap()
-    // };
-    // let lambda_counter1 = {
-    //     let script = std::fs::read("./examples/script/counter-sleep1.js").unwrap();
-    //     let blob = client.blob().new(script).await.unwrap();
-    //     blob.into_lambda("js+counter").await.unwrap()
-    // };
-    // let lambda_counter2 = {
-    //     let script = std::fs::read("./examples/script/counter-sleep2.js").unwrap();
-    //     let blob = client.blob().new(script).await.unwrap();
-    //     blob.into_lambda("js+counter").await.unwrap()
-    // };
+    let lambda_5 = {
+        let script = std::fs::read("./examples/script-test/test5_1-1.js").unwrap();
+        let blob = client.blob().new(script).await.unwrap();
+        blob.into_lambda("test5_1-1").await.unwrap()
+    };
+    let lambda_6 = {
+        let script = std::fs::read("./examples/script-test/test6_0-0.js").unwrap();
+        let blob = client.blob().new(script).await.unwrap();
+        blob.into_lambda("test6_0-0").await.unwrap()
+    };
     //
     // /////
 
     // input
     //
     let blob_blank = client.blob().new("no input").await.unwrap();
-    let blob_log_zoom_s = {
-        let data = std::fs::read("./assets/zoom-s.json").unwrap();
-        let blob = client.blob().new(data).await.unwrap();
-        client.blob().new(blob.id.to_string()).await.unwrap()
-    };
-    // let blob_log_zoom_m = {
-    //     let data = std::fs::read("./assets/zoom-m.json").unwrap();
-    //     let blob = client.blob().new(data).await.unwrap();
-    //     client.blob().new(blob.id.to_string()).await.unwrap()
-    // };
-    // let blob_log_zoom_l = {
-    //     let data = std::fs::read("./assets/zoom-l.json").unwrap();
-    //     let blob = client.blob().new(data).await.unwrap();
-    //     client.blob().new(blob.id.to_string()).await.unwrap()
-    // };
-
-    let blob_images_s = {
-        let data = std::fs::read("./assets/images.zip").unwrap();
-        let blob = client.blob().new(data).await.unwrap();
-        client.blob().new(blob.id.to_string()).await.unwrap()
-    };
-    let blob_images_mini = {
-        let data = std::fs::read("./assets/images_mini.zip").unwrap();
-        let blob = client.blob().new(data).await.unwrap();
-        client.blob().new(blob.id.to_string()).await.unwrap()
-    };
-    // let blob_images_s = {
-    //     let input = std::fs::read("./assets/images-s.zip").unwrap();
-    //     client.blob().new(input).await.unwrap()
-    // };
-    // let blob_images_m = {
-    //     let input = std::fs::read("./assets/images-m.zip").unwrap();
-    //     client.blob().new(input).await.unwrap()
-    // };
-    // let blob_images_l = {
-    //     let input = std::fs::read("./assets/images-l.zip").unwrap();
-    //     client.blob().new(input).await.unwrap()
-    // };
     //
     // /////
 
@@ -130,29 +82,23 @@ async fn main() {
     let mut ticker = tokio::time::interval(INTERVAL);
 
     for _i in 0..args.num_iteration {
-        join_set.spawn(invoke_helper(&lambda_test, &blob_blank));
+        join_set.spawn(invoke_helper(&lambda_1, &blob_blank));
         ticker.tick().await;
 
-        // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_s));
-        // ticker.tick().await;
+        join_set.spawn(invoke_helper(&lambda_2, &blob_blank));
+        ticker.tick().await;
 
-        // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_s));
-        // ticker.tick().await;
+        join_set.spawn(invoke_helper(&lambda_3, &blob_blank));
+        ticker.tick().await;
 
-        // join_set.spawn(invoke_helper(&lambda_fib, &blob_blank));
-        // ticker.tick().await;
+        join_set.spawn(invoke_helper(&lambda_4, &blob_blank));
+        ticker.tick().await;
 
-        // join_set.spawn(invoke_helper(&lambda_openpose, &blob_images_mini));
-        // ticker.tick().await;
+        join_set.spawn(invoke_helper(&lambda_5, &blob_blank));
+        ticker.tick().await;
 
-        // join_set.spawn(invoke_helper(&lambda_counter, &blob_blank));
-        // ticker.tick().await;
-
-        // join_set.spawn(invoke_helper(&lambda_counter1, &blob_blank));
-        // ticker.tick().await;
-
-        // join_set.spawn(invoke_helper(&lambda_counter2, &blob_blank));
-        // ticker.tick().await;
+        join_set.spawn(invoke_helper(&lambda_6, &blob_blank));
+        ticker.tick().await;
     }
 
     join_set.join_all().await;
