@@ -39,7 +39,6 @@ impl Executor {
     ///
     pub fn new(id: usize) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(64);
-
         let max_queueing_time = Arc::new(Mutex::new(Duration::ZERO));
 
         let data_manager = Self {
@@ -81,6 +80,8 @@ impl Executor {
         while let Some(command) = self.command_receiver.blocking_recv() {
             tracing::debug!("Executor {}: start execute", self.id);
             // println!("Executor {}: start execute", self.id);
+
+            // println!("Executor {}: len {}", self.id, self.command_receiver.len());
 
             match command {
                 Command::Register(request) => self.task_execute_job(request),

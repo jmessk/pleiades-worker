@@ -128,6 +128,14 @@ impl JsContext {
                 NativeFunction::from_fn_ptr(function::resize),
             )
             .unwrap();
+
+        context
+            .register_global_builtin_callable(
+                js_string!("busy"),
+                1,
+                NativeFunction::from_fn_ptr(function::busy),
+            )
+            .unwrap();
     }
 
     fn register_builtin_modules(context: &mut Context) {
@@ -180,8 +188,12 @@ impl JsContext {
         let entry_point = r#"
             import fetch from "user";
 
-            let input = getUserInput();
-            setUserOutput(await fetch(input));
+            try {
+                let input = getUserInput();
+                setUserOutput(await fetch(input));
+            } catch (e) {
+                console.error(e);
+            }
         "#;
 
         let source = Source::from_bytes(entry_point);

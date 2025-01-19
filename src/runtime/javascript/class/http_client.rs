@@ -99,7 +99,15 @@ impl HttpClient {
 
         let body_obj = args.get(1).unwrap().to_object(context).unwrap();
         // let body: Bytes = JsUint8Array::from_object(body_obj)?.iter(context).collect();
-        let body: Bytes = body_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
+        // let body: Bytes = body_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
+
+        let body: Bytes = match body_obj.downcast_ref::<ByteData>() {
+            Some(data) => data.inner.clone(),
+            None => {
+                let body_obj = args.get(1).unwrap().to_object(context).unwrap();
+                JsUint8Array::from_object(body_obj)?.iter(context).collect()
+            }
+        };
 
         // Create a request object and insert it into the context
         RuntimeRequest::Http(http::Request::Post { url, body }).insert(context.realm());
@@ -113,10 +121,11 @@ impl HttpClient {
             let response = RuntimeResponse::extract(context.realm());
 
             let result = match response {
-                Some(RuntimeResponse::Http(http::Response::Get(Some(body)))) => {
+                Some(RuntimeResponse::Http(http::Response::Post(Some(body)))) => {
                     tracing::trace!("response found: {:?}", body.len());
                     // let array = JsUint8Array::from_iter(body, context)?;
                     // JsValue::from(array)
+                    // println!("body: {:?}", body);
                     let data = ByteData { inner: body };
                     JsValue::from(JsObject::from_proto_and_data(None, data))
                 }

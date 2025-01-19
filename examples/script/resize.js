@@ -6,6 +6,9 @@ async function fetch(input) {
 
     let output = resize(inputBlob);
 
+    let client = new HttpClient();
+    let response = await client.post("http://pleiades.local:8000/upload", output);
+
     return output;
 }
 

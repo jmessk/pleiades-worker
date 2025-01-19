@@ -228,3 +228,21 @@ pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRes
 
     // Ok(JsValue::undefined())
 }
+
+pub fn busy(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ms = match args.first() {
+        Some(ms) => ms.to_number(context)? as u128,
+        None => 0,
+    };
+
+    let mut count = 0;
+
+    let start = std::time::Instant::now();
+    while start.elapsed().as_millis() < ms {
+        for _ in 0..10000 {
+            count += 1;
+        }
+    }
+
+    Ok(JsValue::from(count))
+}

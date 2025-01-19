@@ -13,6 +13,22 @@ async fn main() {
     //
     // /////
 
+    // Initialize tracing
+    //
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+    // tracing_subscriber::registry()
+    //     .with(tracing_subscriber::EnvFilter::from_default_env())
+    //     .with(tracing_subscriber::fmt::layer())
+    //     .with(console_subscriber::spawn())
+    //     .try_init()
+    //     .unwrap();
+
+    // console_subscriber::init();
+    //
+    // /////
+
     // Parse arguments
     //
     let args = Arg::parse();
@@ -23,6 +39,11 @@ async fn main() {
 
     // lambda
     //
+    let lambda_test = {
+        let script = std::fs::read("./examples/script/test.js").unwrap();
+        let blob = client.blob().new(script).await.unwrap();
+        blob.into_lambda("pleiades+example").await.unwrap()
+    };
     let lambda_compress = {
         let script = std::fs::read("./examples/script/compress.js").unwrap();
         let blob = client.blob().new(script).await.unwrap();
@@ -33,21 +54,31 @@ async fn main() {
         let blob = client.blob().new(script).await.unwrap();
         blob.into_lambda("js+resize").await.unwrap()
     };
-    let lambda_fib = {
-        let script = std::fs::read("./examples/script/fib.js").unwrap();
-        let blob = client.blob().new(script).await.unwrap();
-        blob.into_lambda("js+fib").await.unwrap()
-    };
+    // let lambda_fib = {
+    //     let script = std::fs::read("./examples/script/fib.js").unwrap();
+    //     let blob = client.blob().new(script).await.unwrap();
+    //     blob.into_lambda("js+fib").await.unwrap()
+    // };
     let lambda_openpose = {
         let script = std::fs::read("./examples/script/openpose.js").unwrap();
         let blob = client.blob().new(script).await.unwrap();
         blob.into_lambda("js+gpu").await.unwrap()
     };
-    let lambda_counter = {
-        let script = std::fs::read("./examples/script/counter.js").unwrap();
-        let blob = client.blob().new(script).await.unwrap();
-        blob.into_lambda("js+cpu").await.unwrap()
-    };
+    // let lambda_counter = {
+    //     let script = std::fs::read("./examples/script/counter.js").unwrap();
+    //     let blob = client.blob().new(script).await.unwrap();
+    //     blob.into_lambda("js+counter").await.unwrap()
+    // };
+    // let lambda_counter1 = {
+    //     let script = std::fs::read("./examples/script/counter-sleep1.js").unwrap();
+    //     let blob = client.blob().new(script).await.unwrap();
+    //     blob.into_lambda("js+counter").await.unwrap()
+    // };
+    // let lambda_counter2 = {
+    //     let script = std::fs::read("./examples/script/counter-sleep2.js").unwrap();
+    //     let blob = client.blob().new(script).await.unwrap();
+    //     blob.into_lambda("js+counter").await.unwrap()
+    // };
     //
     // /////
 
@@ -59,16 +90,16 @@ async fn main() {
         let blob = client.blob().new(data).await.unwrap();
         client.blob().new(blob.id.to_string()).await.unwrap()
     };
-    let blob_log_zoom_m = {
-        let data = std::fs::read("./assets/zoom-m.json").unwrap();
-        let blob = client.blob().new(data).await.unwrap();
-        client.blob().new(blob.id.to_string()).await.unwrap()
-    };
-    let blob_log_zoom_l = {
-        let data = std::fs::read("./assets/zoom-l.json").unwrap();
-        let blob = client.blob().new(data).await.unwrap();
-        client.blob().new(blob.id.to_string()).await.unwrap()
-    };
+    // let blob_log_zoom_m = {
+    //     let data = std::fs::read("./assets/zoom-m.json").unwrap();
+    //     let blob = client.blob().new(data).await.unwrap();
+    //     client.blob().new(blob.id.to_string()).await.unwrap()
+    // };
+    // let blob_log_zoom_l = {
+    //     let data = std::fs::read("./assets/zoom-l.json").unwrap();
+    //     let blob = client.blob().new(data).await.unwrap();
+    //     client.blob().new(blob.id.to_string()).await.unwrap()
+    // };
 
     let blob_images_s = {
         let data = std::fs::read("./assets/images.zip").unwrap();
@@ -99,20 +130,13 @@ async fn main() {
     let mut ticker = tokio::time::interval(INTERVAL);
 
     for _i in 0..args.num_iteration {
+        join_set.spawn(invoke_helper(&lambda_test, &blob_blank));
+        ticker.tick().await;
+
         // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_s));
         // ticker.tick().await;
 
-        // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_m));
-        // ticker.tick().await;
-        // join_set.spawn(invoke_helper(&lambda_compress, &blob_log_zoom_l));
-        // ticker.tick().await;
-
         // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_s));
-        // ticker.tick().await;
-
-        // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_m));
-        // ticker.tick().await;
-        // join_set.spawn(invoke_helper(&lambda_resize, &blob_images_l));
         // ticker.tick().await;
 
         // join_set.spawn(invoke_helper(&lambda_fib, &blob_blank));
@@ -121,10 +145,17 @@ async fn main() {
         // join_set.spawn(invoke_helper(&lambda_openpose, &blob_images_mini));
         // ticker.tick().await;
 
-        join_set.spawn(invoke_helper(&lambda_counter, &blob_blank));
+        // join_set.spawn(invoke_helper(&lambda_counter, &blob_blank));
+        // ticker.tick().await;
+
+        // join_set.spawn(invoke_helper(&lambda_counter1, &blob_blank));
+        // ticker.tick().await;
+
+        // join_set.spawn(invoke_helper(&lambda_counter2, &blob_blank));
+        // ticker.tick().await;
     }
 
-    let _job_list = join_set.join_all().await;
+    join_set.join_all().await;
 
     println!("All jobs are generated");
 }

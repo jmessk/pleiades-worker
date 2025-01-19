@@ -196,31 +196,31 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
             config.job_deadline,
         )
         .await;
-    worker_id_manager
-        .insert(
-            "cpu",
-            &[
-                "js+resize",
-                "js+fib",
-                "js+counter",
-            ],
-            config.job_deadline,
-        )
-        .await;
-    worker_id_manager
-        .insert(
-            "other",
-            &[
-                "pleiades+example",
-                "js+compress",
-                "js+resize",
-                "js+fib",
-                "js+gpu",
-                "js+counter",
-            ],
-            config.job_deadline,
-        )
-        .await;
+    // worker_id_manager
+    //     .insert(
+    //         "cpu",
+    //         &[
+    //             "js+resize",
+    //             "js+fib",
+    //             "js+counter",
+    //         ],
+    //         config.job_deadline,
+    //     )
+    //     .await;
+    // worker_id_manager
+    //     .insert(
+    //         "other",
+    //         &[
+    //             "pleiades+example",
+    //             "js+compress",
+    //             "js+resize",
+    //             "js+fib",
+    //             "js+gpu",
+    //             "js+counter",
+    //         ],
+    //         config.job_deadline,
+    //     )
+    //     .await;
 
     // Initialize GlobalSched
     //
@@ -256,6 +256,7 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
             dir.clone(),
             config.num_cpus,
             stop_notify_receiver,
+            config.cpu_usage_freq,
         ));
 
         let summary = save_metrics(
@@ -302,6 +303,8 @@ struct WorkerConfig {
     exec_deadline: Duration,
     #[serde(deserialize_with = "deserialize_duration")]
     job_deadline: Duration,
+    #[serde(deserialize_with = "deserialize_duration")]
+    cpu_usage_freq: Duration,
 }
 
 impl Default for WorkerConfig {
@@ -313,6 +316,7 @@ impl Default for WorkerConfig {
             policy: "cooperative".to_string(),
             exec_deadline: Duration::from_millis(300),
             job_deadline: Duration::from_millis(100),
+            cpu_usage_freq: Duration::from_secs(1),
         }
     }
 }
@@ -434,6 +438,7 @@ async fn save_cpu_usage(
     dir: PathBuf,
     num_use_cpus: usize,
     mut stop_notifier: tokio::sync::watch::Receiver<()>,
+    freq: Duration,
 ) {
     let file_name = dir.join("cpu_usage.csv");
     let file = File::create(&file_name).unwrap();
@@ -447,7 +452,7 @@ async fn save_cpu_usage(
 
     let mut system = sysinfo::System::new_all();
 
-    let mut ticker = tokio::time::interval(Duration::from_millis(200));
+    let mut ticker = tokio::time::interval(freq);
     let mut counter = 0u64;
 
     while {

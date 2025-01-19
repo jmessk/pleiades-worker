@@ -166,6 +166,8 @@ impl Contractor {
             }
         };
 
+        tracing::trace!("contracted: job_id={}", job_id);
+
         // start job processing
         let contracted_at = Instant::now();
 
@@ -187,6 +189,8 @@ impl Contractor {
         //         return;
         //     }
         // };
+
+        // println!("{}", job_info.lambda.runtime);
 
         // download input and lambda code
         //
