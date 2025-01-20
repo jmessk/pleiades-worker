@@ -121,6 +121,7 @@ impl GlobalSched {
     }
 
     async fn contract_up_to_deadline(&mut self, job_deadline: Duration, worker_id: &str) {
+        println!("contract_up_to_deadline");
         let max = self.local_sched_manager.deadline_sum;
         let local_sched_used = self.local_sched_manager.used_sum();
         let contracting = self.contracting;
@@ -162,6 +163,14 @@ impl GlobalSched {
         self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
             .await;
 
+        let controller = self.global_sched.clone();
+        let contract = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                controller.signal_local_action().await;
+            }
+        });
+
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Contracted(job) => {
@@ -177,6 +186,7 @@ impl GlobalSched {
                 }
                 Command::ShutdownReq => {
                     self.schedule_shutdown().await;
+                    contract.abort();
                 }
                 Command::ShutdownDone => {
                     self.local_sched_manager.signal_shutdown_req().await;

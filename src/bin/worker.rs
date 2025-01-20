@@ -1,4 +1,5 @@
 use clap::Parser;
+use core::num;
 use pleiades_worker::scheduler::global_sched;
 use pleiades_worker::updater;
 use std::collections::HashMap;
@@ -58,8 +59,9 @@ fn main() {
     //
     // /////
 
-    let cpu_list = core_affinity::get_core_ids().unwrap();
-    let num_cores = cpu_list.len();
+    // let cpu_list = core_affinity::get_core_ids().unwrap();
+    // let num_cores = cpu_list.len();
+    let num_cores = affinity::get_core_num();
     let num_tokio_workers = num_cores - config.num_cpus;
     let num_executors = config.num_executors;
     let num_use_cores = config.num_cpus;
@@ -69,28 +71,48 @@ fn main() {
     println!("num_executors: {num_executors}");
     println!("num_cpus: {num_use_cores}");
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        // .worker_threads(num_tokio_workers)
-        // .on_thread_start(move || {
-        //     static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
-        //     let count = CORE_COUNT.load(std::sync::atomic::Ordering::SeqCst);
-        //     // println!("count: {count}");
-        //     if count < num_tokio_workers {
-        //         let id =
-        //             num_cores - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) - 1;
-        //         core_affinity::set_for_current(core_affinity::CoreId { id });
-        //         println!("tokio worker is set to core {}", id);
-        //     } else if count < num_tokio_workers + num_executors {
-        //         let id = (CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-        //             - num_tokio_workers)
-        //             % num_use_cores;
-        //         core_affinity::set_for_current(core_affinity::CoreId { id });
-        //         println!("executor is set to core {}", id);
-        //     }
-        // })
-        .build()
-        .unwrap();
+    let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
+
+    if config.enable_affinity {
+        runtime_builder
+            .worker_threads(num_tokio_workers)
+            // .on_thread_start(move || {
+            //     static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
+            //     let count = CORE_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+            //     // println!("count: {count}");
+            //     if count < num_tokio_workers {
+            //         let id = num_cores
+            //             - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            //             - 1;
+            //         core_affinity::set_for_current(core_affinity::CoreId { id });
+            //         println!("tokio worker is set to core {}", id);
+            //     } else if count < num_tokio_workers + num_executors {
+            //         let id = (CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            //             - num_tokio_workers)
+            //             % num_use_cores;
+            //         core_affinity::set_for_current(core_affinity::CoreId { id });
+            //         println!("executor is set to core {}", id);
+            //     }
+            // });
+            .on_thread_start(move || {
+                static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
+                let count = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                // println!("count: {count}");
+                if count < num_tokio_workers {
+                    let first = num_cores - num_tokio_workers;
+                    let list = (first..num_cores).collect::<Vec<usize>>();
+
+                    affinity::set_thread_affinity(&list).unwrap();
+                    println!("tokio worker is set to core {list:?}");
+                } else if count < num_tokio_workers + num_executors {
+                    let list = (0..num_use_cores).collect::<Vec<usize>>();
+
+                    affinity::set_thread_affinity(&list).unwrap();
+                    println!("executor is set to core {list:?}");
+                }
+            });
+    }
+    let runtime = runtime_builder.enable_all().build().unwrap();
 
     runtime.block_on(async move {
         worker(args, config).await.join_all().await;
@@ -203,8 +225,11 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
                 "test2_1-0",
                 "test3_1-1",
                 "test4_1-0",
+                "test4_1-0_o",
                 "test5_1-1",
+                "test5_1-1_o",
                 "test6_0-0",
+                "test6_0-0_o",
             ],
             config.job_deadline,
         )
@@ -286,6 +311,7 @@ struct WorkerConfig {
     num_contractors: usize,
     num_executors: usize,
     num_cpus: usize,
+    enable_affinity: bool,
     policy: String,
     #[serde(deserialize_with = "deserialize_duration")]
     exec_deadline: Duration,
@@ -301,6 +327,7 @@ impl Default for WorkerConfig {
             num_contractors: 1,
             num_executors: 1,
             num_cpus: 1,
+            enable_affinity: false,
             policy: "cooperative".to_string(),
             exec_deadline: Duration::from_millis(300),
             job_deadline: Duration::from_millis(100),

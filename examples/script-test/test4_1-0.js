@@ -1,8 +1,8 @@
-const max = 5000;
+const max = 20000;
 
 async function fetch(input) {
     //
-    await sleep(max * 0.8);
+    await sleep(max);
 
     console.log("test4 done");
     return "";

@@ -42,7 +42,7 @@ pub struct LocalSched {
 }
 
 impl LocalSched {
-    const MAX_CONCURRENCY: usize = 128;
+    const MAX_CONCURRENCY: usize = 1024;
 
     /// new
     ///
@@ -171,18 +171,19 @@ impl LocalSched {
                         self.controller.sub_queuing(prev_rem_time);
                         self.controller.add_pending(job.remaining);
                         self.enqueue_pend(job).await;
+                        println!("job pending");
 
-                        if !shutdown_flag {
-                            self.signal_local_action().await;
-                        }
+                        // if !shutdown_flag {
+                        //     self.signal_local_action().await;
+                        // }
                     }
                     JobStatus::Finished(_) | JobStatus::Cancelled => {
                         self.controller.sub_queuing(prev_rem_time);
                         self.updater.update_job(job).await;
 
-                        if !shutdown_flag {
-                            self.signal_local_action().await;
-                        }
+                        // if !shutdown_flag {
+                        //     self.signal_local_action().await;
+                        // }
                     }
                     _ => unreachable!(),
                 },
@@ -214,6 +215,7 @@ impl LocalSched {
                             JobStatus::Pending(_) => {
                                 let handle = self.pending_manager.register(job).await;
                                 let response = handle.response_receiver.await.unwrap();
+                                println!("job pending");
 
                                 response.job
                             }
@@ -221,9 +223,9 @@ impl LocalSched {
                                 self.controller.sub_queuing(prev_rem_time);
                                 self.updater.update_job(job).await;
 
-                                if !shutdown_flag {
-                                    self.signal_local_action().await;
-                                }
+                                // if !shutdown_flag {
+                                //     self.signal_local_action().await;
+                                // }
 
                                 break;
                             }

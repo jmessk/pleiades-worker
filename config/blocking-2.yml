@@ -1,7 +1,0 @@
-num_contractors: 16
-num_executors: 24
-num_cpus: 24
-policy: blocking
-exec_deadline: 10s
-job_deadline: 5s
-cpu_usage_freq: 3s

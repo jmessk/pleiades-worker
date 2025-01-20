@@ -2,7 +2,7 @@ const max = 20000;
 
 async function fetch(input) {
     busy(max * 0.5);
-    await sleep(1000);
+    blockingSleep(1000);
     busy(max * 0.5);
 
     console.log("test6 done");

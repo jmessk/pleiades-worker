@@ -1,4 +1,4 @@
-const max = 5000;
+const max = 20000;
 
 async function fetch(input) {
     busy(max);
