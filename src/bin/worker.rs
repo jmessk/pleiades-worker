@@ -1,6 +1,8 @@
 use clap::Parser;
 use pleiades_worker::scheduler::global_sched;
 use pleiades_worker::updater;
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::io::prelude::*;
 use std::{
     fs::File,
@@ -319,7 +321,7 @@ impl WorkerConfig {
 async fn save_summary(
     dir: PathBuf,
     config: WorkerConfig,
-    (elapsed, finished, cancelled, each_arv): (Duration, u64, u64, Vec<f64>),
+    (elapsed, finished, cancelled, each_arv): (Duration, u64, u64, HashMap<String, f64>),
 ) {
     let file = File::create(dir.join("summary.yml")).unwrap();
     let mut writer = BufWriter::new(file);
@@ -343,13 +345,18 @@ cancelled: {cancelled}
         )
         .unwrap();
 
-    writer.write_all("each_avr:\n".as_bytes()).unwrap();
-    each_arv.iter().enumerate().for_each(|(i, &x)| {
-        let i = i + 1;
+    writer.write_all("runtime_avr:\n".as_bytes()).unwrap();
+    each_arv.iter().for_each(|(runtime, avr)| {
         writer
-            .write_all(format!("  - test{i}: {x}\n").as_bytes())
+            .write_all(format!("  {runtime}: {avr}\n").as_bytes())
             .unwrap();
     });
+    // each_arv.iter().enumerate().for_each(|(i, &x)| {
+    //     let i = i + 1;
+    //     writer
+    //         .write_all(format!("  - test{i}: {x}\n").as_bytes())
+    //         .unwrap();
+    // });
 }
 
 async fn save_metrics(
@@ -357,7 +364,7 @@ async fn save_metrics(
     global_sched_controller: global_sched::Controller,
     mut updater_controller: updater::Controller,
     num_iteration: usize,
-) -> (Duration, u64, u64, Vec<f64>) {
+) -> (Duration, u64, u64, HashMap<String, f64>) {
     let file = File::create(dir.join("metrics.csv")).unwrap();
     let mut file = BufWriter::new(file);
 
@@ -371,7 +378,8 @@ async fn save_metrics(
     let mut canceled = 0;
 
     //
-    let mut each_sum = [0u64; 6];
+    // let mut each_sum = [0u64; 6];
+    let mut runtime_sum = HashMap::<String, (u32, u64)>::new();
     //
 
     // while let Some(metric) = updater_controller.recv_metric().await {
@@ -413,9 +421,17 @@ async fn save_metrics(
         }
 
         //
-        let runt = runtime.split('_').collect::<Vec<&str>>()[0];
-        let index = runt.chars().last().unwrap().to_digit(10).unwrap() as usize - 1;
-        each_sum[index] += elapsed.as_millis() as u64;
+        // let runt = runtime.split('_').collect::<Vec<&str>>()[0];
+        // let index = runt.chars().last().unwrap().to_digit(10).unwrap() as usize - 1;
+        // each_sum[index] += elapsed.as_millis() as u64;
+
+        runtime_sum
+            .entry(runtime.clone())
+            .and_modify(|(count, sum)| {
+                *count += 1;
+                *sum += elapsed.as_millis() as u64;
+            })
+            .or_insert((1, elapsed.as_millis() as u64));
         //
 
         file.write_all(
@@ -441,13 +457,17 @@ async fn save_metrics(
         .unwrap_or(Duration::ZERO);
 
     //
-    let each_avr = each_sum
-        .iter()
-        .map(|&x| x as f64 / (num_iteration as f64 / 6.0))
-        .collect::<Vec<f64>>();
+    // let each_avr = each_sum
+    //     .iter()
+    //     .map(|&x| x as f64 / (num_iteration as f64 / 6.0))
+    //     .collect::<Vec<f64>>();
+    let runtime_avr = runtime_sum
+        .into_iter()
+        .map(|(runtime, (count, sum))| (runtime, sum as f64 / (count as f64)))
+        .collect::<HashMap<String, f64>>();
     //
 
-    (elapsed, finished, canceled, each_avr)
+    (elapsed, finished, canceled, runtime_avr)
 }
 
 async fn save_cpu_usage(
