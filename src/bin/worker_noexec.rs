@@ -38,7 +38,8 @@ async fn main() {
         8,
         Duration::from_millis(100),
     );
-    let (mut updater, updater_controller) = Updater::new(client.clone(), data_manager_controller, false);
+    let (mut updater, updater_controller) =
+        Updater::new(client.clone(), data_manager_controller, false);
 
     let fetcher = tokio::spawn(async move {
         fetcher.run().await;
@@ -96,7 +97,7 @@ async fn loop_contractor(
         join_set.spawn(async move {
             // while let Some(job) = contractor_api
             if let Some(job) = contractor_api
-                .try_contract(worker_id.clone())
+                .try_contract("default".to_string(), worker_id.clone())
                 .await
                 .unwrap()
                 .recv()

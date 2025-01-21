@@ -136,6 +136,14 @@ impl JsContext {
                 NativeFunction::from_fn_ptr(function::busy),
             )
             .unwrap();
+
+        context
+            .register_global_builtin_callable(
+                js_string!("count"),
+                1,
+                NativeFunction::from_fn_ptr(function::count),
+            )
+            .unwrap();
     }
 
     fn register_builtin_modules(context: &mut Context) {

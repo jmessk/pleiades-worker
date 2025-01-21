@@ -84,7 +84,10 @@ impl Contractor {
                 let Command::Contract(request) = command;
                 request
                     .response_sender
-                    .send(contract::Response { contracted: None })
+                    .send(contract::Response {
+                        contracted: None,
+                        groupe: request.groupe,
+                    })
                     .expect("contractor");
                 continue;
             }
@@ -160,7 +163,10 @@ impl Contractor {
 
                 request
                     .response_sender
-                    .send(contract::Response { contracted: None })
+                    .send(contract::Response {
+                        contracted: None,
+                        groupe: request.groupe,
+                    })
                     .expect("contractor");
                 return;
             }
@@ -190,7 +196,7 @@ impl Contractor {
         //     }
         // };
 
-        // println!("{}", job_info.lambda.runtime);
+        println!("{}", job_info.lambda.runtime);
 
         // download input and lambda code
         //
@@ -236,6 +242,7 @@ impl Contractor {
             .response_sender
             .send(contract::Response {
                 contracted: Some(job),
+                groupe: request.groupe,
             })
             .expect("contractor");
 
@@ -258,10 +265,15 @@ pub struct Controller {
 impl Controller {
     /// contract
     ///
-    pub async fn try_contract(&self, worker_id: String) -> anyhow::Result<contract::Handle> {
+    pub async fn try_contract(
+        &self,
+        groupe: String,
+        worker_id: String,
+    ) -> anyhow::Result<contract::Handle> {
         let (response_sender, response_receiver) = oneshot::channel();
 
         let request = Command::Contract(contract::Request {
+            groupe,
             worker_id,
             response_sender,
         });
@@ -287,6 +299,7 @@ pub mod contract {
     use super::*;
 
     pub struct Request {
+        pub groupe: String,
         pub worker_id: String,
         pub response_sender: oneshot::Sender<Response>,
     }
@@ -294,6 +307,7 @@ pub mod contract {
     #[derive(Debug)]
     pub struct Response {
         pub contracted: Option<Job>,
+        pub groupe: String,
     }
 
     pub struct Handle {
@@ -436,7 +450,10 @@ mod tests {
         let requester = tokio::spawn(async move { generate_job(&requester_client).await });
 
         let worker_id = register_worker(&client).await;
-        let handle = contractor_api.try_contract(worker_id).await.unwrap();
+        let handle = contractor_api
+            .try_contract("default".to_string(), worker_id)
+            .await
+            .unwrap();
 
         let response = handle.response_receiver.await.unwrap();
 

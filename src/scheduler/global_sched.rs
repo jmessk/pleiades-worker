@@ -1,7 +1,13 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{atomic::AtomicUsize, Arc},
+    time::Duration,
+};
 use tokio::sync::{mpsc, watch, Semaphore};
 
-use crate::{contractor, helper::LocalSchedManager, pleiades_type::Job, WorkerIdManager};
+use crate::{
+    contractor, helper::LocalSchedManager, pleiades_type::Job, scheduler::local_sched,
+    WorkerIdManager,
+};
 
 /// Scheduler
 ///
@@ -88,7 +94,17 @@ impl GlobalSched {
         // println!("signal_shutdown {}", semaphore.available_permits());
 
         tokio::spawn(async move {
-            let _ = semaphore.acquire_many(Self::MAX_CONCURRENCY as u32).await;
+            // let _ = semaphore.acquire_many(Self::MAX_CONCURRENCY as u32).await;
+            loop {
+                if semaphore.available_permits() == Self::MAX_CONCURRENCY
+                    && scheduler_controller.command_sender.capacity()
+                        == scheduler_controller.command_sender.max_capacity()
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+
             scheduler_controller.signal_shutdown_done().await;
         });
 
@@ -98,13 +114,13 @@ impl GlobalSched {
     /// schedule_contract
     ///
     ///
-    async fn schedule_contract(&self, worker_id: &str) {
+    async fn schedule_contract(&self, groupe: &str, worker_id: &str) {
         let global_sched = self.global_sched.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
         let handle = self
             .contractor
-            .try_contract(worker_id.to_string())
+            .try_contract(groupe.to_string(), worker_id.to_string())
             .await
             .unwrap();
 
@@ -112,7 +128,7 @@ impl GlobalSched {
             let response = handle.recv().await;
 
             match response.contracted {
-                Some(job) => global_sched.enqueue_job(job).await,
+                Some(job) => global_sched.enqueue_job(job, response.groupe).await,
                 None => global_sched.signal_no_job().await,
             }
 
@@ -121,7 +137,6 @@ impl GlobalSched {
     }
 
     async fn contract_up_to_deadline(&mut self, job_deadline: Duration, worker_id: &str) {
-        println!("contract_up_to_deadline");
         let max = self.local_sched_manager.deadline_sum;
         let local_sched_used = self.local_sched_manager.used_sum();
         let contracting = self.contracting;
@@ -136,9 +151,38 @@ impl GlobalSched {
 
         tracing::debug!("capacity: {capacity:?}, available_jobs: {available_jobs}, max: {max}",);
 
+        static COUNTER: AtomicUsize = AtomicUsize::new(1);
         for _ in 0..max {
+            // let (worker_id, job_deadline) = self.worker_id_manager.get_default();
+
+            // edit
+            //
+            let i = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let groupe = format!("test{i}");
+            // let (worker_id, job_deadline) = self.worker_id_manager.get(&groupe).unwrap();
+            let (worker_id, job_deadline) = self.worker_id_manager.get("test1").unwrap();
+
+            COUNTER.store(i % 6 + 1, std::sync::atomic::Ordering::SeqCst);
+            //
+            // /////
+
+            // edit
+            // //
+            // let i = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+            // let groupe = match i % 2 {
+            //     0 => "cpu".to_string(),
+            //     1 => "gpu".to_string(),
+            //     _ => "default".to_string(),
+            // };
+            // let (worker_id, job_deadline) = self.worker_id_manager.get(&groupe).unwrap();
+
+            // COUNTER.store(i % 2, std::sync::atomic::Ordering::SeqCst);
+            //
+            // /////
             self.add_contracting(job_deadline);
-            self.schedule_contract(worker_id).await;
+            // self.schedule_contract(&groupe, &worker_id).await;
+            self.schedule_contract("default", &worker_id).await;
         }
     }
 
@@ -160,8 +204,8 @@ impl GlobalSched {
     async fn sched_loop(&mut self) {
         let (default_worker_id, default_job_deadline) = self.worker_id_manager.get_default();
 
-        self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
-            .await;
+        // self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
+        //     .await;
 
         let controller = self.global_sched.clone();
         let contract = tokio::spawn(async move {
@@ -173,8 +217,18 @@ impl GlobalSched {
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
-                Command::Contracted(job) => {
-                    let local_sched = self.local_sched_manager.shortest();
+                Command::Contracted { job, groupe } => {
+                    // let local_sched = self.local_sched_manager.shortest();
+                    // edit
+                    let local_sched = match groupe.as_str() {
+                        "test1" | "test2" | "test3" | "test6" => {
+                            self.local_sched_manager.shortest()
+                        }
+                        "test4" | "test5" => self.local_sched_manager.shortest_pending(),
+                        _ => self.local_sched_manager.shortest(),
+                    };
+                    // /////
+
                     local_sched.assign(job).await;
                     tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
                     self.sub_contracting(default_job_deadline);
@@ -210,8 +264,11 @@ pub struct Controller {
 impl Controller {
     /// enqueue_ready
     ///
-    pub async fn enqueue_job(&self, job: Job) {
-        let _ = self.command_sender.send(Command::Contracted(job)).await;
+    pub async fn enqueue_job(&self, job: Job, groupe: String) {
+        let _ = self
+            .command_sender
+            .send(Command::Contracted { job, groupe })
+            .await;
     }
 
     pub async fn signal_no_job(&self) {
@@ -242,7 +299,7 @@ impl Controller {
 
 #[derive(Debug)]
 pub enum Command {
-    Contracted(Job),
+    Contracted { job: Job, groupe: String },
     NoJob,
     LocalAction,
     ShutdownReq,

@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use tokio::task::JoinSet;
+
 use crate::scheduler::local_sched;
 
 struct Item {
@@ -37,6 +39,27 @@ impl LocalSchedManager {
 
                 used_time
             })
+            .unwrap();
+
+        &mut item.local_sched
+    }
+ 
+    pub fn shortest_pending(&mut self) -> &mut local_sched::Controller {
+        let item = self
+            .list
+            .iter_mut()
+            // .filter(|item| )
+            .min_by_key(|item| item.local_sched.pending())
+            .unwrap();
+
+        &mut item.local_sched
+    }
+
+    pub fn shortest_queuing(&mut self) -> &mut local_sched::Controller {
+        let item = self
+            .list
+            .iter_mut()
+            .min_by_key(|item| item.local_sched.queuing())
             .unwrap();
 
         &mut item.local_sched

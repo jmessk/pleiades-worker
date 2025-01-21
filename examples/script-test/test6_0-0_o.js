@@ -1,11 +1,12 @@
 const max = 20000;
+const iter = 150000000;
 
 async function fetch(input) {
-    busy(max * 0.5);
+    busy(iter * 0.5);
     blockingSleep(1000);
-    busy(max * 0.5);
+    busy(iter * 0.5);
 
-    console.log("test6 done");
+    console.log("test6_o done");
     return "";
 }
 

@@ -103,7 +103,16 @@ impl LocalSched {
         let semaphore = self.semaphore.clone();
 
         tokio::spawn(async move {
-            let _ = semaphore.acquire_many(Self::MAX_CONCURRENCY as u32).await;
+            // let _ = semaphore.acquire_many(Self::MAX_CONCURRENCY as u32).await;
+            loop {
+                if semaphore.available_permits() == Self::MAX_CONCURRENCY
+                    && local_sched.command_sender.capacity()
+                        == local_sched.command_sender.max_capacity()
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
             local_sched.signal_shutdown_done().await;
         });
 
@@ -251,7 +260,7 @@ impl LocalSched {
 #[derive(Clone)]
 pub struct Controller {
     pub id: usize,
-    command_sender: mpsc::Sender<Command>,
+    pub command_sender: mpsc::Sender<Command>,
     queuing: Arc<Mutex<Duration>>,
     pending: Arc<Mutex<Duration>>,
 }

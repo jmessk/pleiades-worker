@@ -492,7 +492,10 @@ mod tests {
         let requester = tokio::spawn(async move { generate_job(&requester_client).await });
 
         let worker_id = register_worker(&client).await;
-        let handle = api.try_contract(worker_id).await.unwrap();
+        let handle = api
+            .try_contract("default".to_string(), worker_id)
+            .await
+            .unwrap();
 
         let response = handle.recv().await;
 

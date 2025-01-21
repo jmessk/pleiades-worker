@@ -92,7 +92,10 @@ pub fn sleep(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
 
     let ms = match args.first() {
         Some(ms) => ms.to_number(context)? as u64,
-        None => 0,
+        None => {
+            println!("no ms");
+            0
+        }
     };
 
     // Create a request object and insert it into the context
@@ -124,7 +127,10 @@ pub fn blocking_sleep(
 ) -> JsResult<JsValue> {
     let ms = match args.first() {
         Some(ms) => ms.to_number(context)? as u64,
-        None => 0,
+        None => {
+            println!("no ms");
+            0
+        }
     };
 
     std::thread::sleep(Duration::from_millis(ms));
@@ -235,14 +241,32 @@ pub fn busy(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
         None => 0,
     };
 
-    let mut count = 0;
+    let mut count = 0u64;
 
-    let start = std::time::Instant::now();
+    // let start = std::time::Instant::now();
+    let start = cpu_time::ThreadTime::now();
     while start.elapsed().as_millis() < ms {
         for _ in 0..1000 {
             count += 1;
         }
     }
+
+    Ok(JsValue::from(count))
+}
+
+pub fn count(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let max = match args.first() {
+        Some(max) => max.to_number(context)? as u64,
+        None => 0,
+    };
+
+    let mut count = 0u64;
+
+    for _ in 0..max {
+        count += 1;
+    }
+
+    println!("count: {}", count);
 
     Ok(JsValue::from(count))
 }

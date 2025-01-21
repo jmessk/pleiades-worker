@@ -4,8 +4,8 @@ for item in cooperative-4; do
     echo "Running $item"
 
     for i in {1..1}; do
-        ./run_generator.bash -n 50
-        ./run_worker.bash --config ./config/$item.yml -n 300
+        ./run_generator.bash -n 100
+        ./run_worker.bash --config ./config/$item.yml -n 100
     done
 done
 

@@ -235,6 +235,52 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
         )
         .await;
 
+    worker_id_manager
+        .insert(
+            "cpu",
+            &[
+                "test1_0-0",
+                "test2_1-0",
+                "test3_1-1",
+                "test6_0-0",
+                "test6_0-0_o",
+            ],
+            config.job_deadline,
+        )
+        .await;
+
+    worker_id_manager
+        .insert(
+            "gpu",
+            &["test4_1-0", "test4_1-0_o", "test5_1-1", "test5_1-1_o"],
+            config.job_deadline,
+        )
+        .await;
+
+    worker_id_manager
+        .insert("test1", &["test1_0-0"], config.job_deadline)
+        .await;
+
+    worker_id_manager
+        .insert("test2", &["test2_1-0"], config.job_deadline)
+        .await;
+
+    worker_id_manager
+        .insert("test3", &["test3_1-1"], config.job_deadline)
+        .await;
+
+    worker_id_manager
+        .insert("test4", &["test4_1-0", "test4_1-0_o"], config.job_deadline)
+        .await;
+
+    worker_id_manager
+        .insert("test5", &["test5_1-1", "test5_1-1_o"], config.job_deadline)
+        .await;
+
+    worker_id_manager
+        .insert("test6", &["test6_0-0", "test6_0-0_o"], config.job_deadline)
+        .await;
+
     // Initialize GlobalSched
     //
     let (mut global_sched, global_sched_controller) = GlobalSched::new(
@@ -263,11 +309,13 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
         let dir = PathBuf::from(format!("./metrics/{timestamp}"));
         std::fs::create_dir_all(&dir).unwrap();
 
+        let (start_notify_sender, start_notify_receiver) = tokio::sync::watch::channel(());
         let (stop_notify_sender, stop_notify_receiver) = tokio::sync::watch::channel(());
 
         let cpu_usage = tokio::spawn(save_cpu_usage(
             dir.clone(),
             config.num_cpus,
+            start_notify_receiver,
             stop_notify_receiver,
             config.cpu_usage_freq,
         ));
@@ -277,10 +325,11 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
             global_sched_controller.clone(),
             updater_controller,
             num_iteration,
+            start_notify_sender,
+            stop_notify_sender,
         )
         .await;
 
-        stop_notify_sender.send(()).unwrap();
         cpu_usage.await.unwrap();
         save_summary(dir.clone(), config, summary).await;
 
@@ -391,6 +440,8 @@ async fn save_metrics(
     global_sched_controller: global_sched::Controller,
     mut updater_controller: updater::Controller,
     num_iteration: usize,
+    start_notify_sender: tokio::sync::watch::Sender<()>,
+    stop_notify_sender: tokio::sync::watch::Sender<()>,
 ) -> (Duration, u64, u64, HashMap<String, f64>) {
     let file = File::create(dir.join("metrics.csv")).unwrap();
     let mut file = BufWriter::new(file);
@@ -423,6 +474,28 @@ async fn save_metrics(
             elapsed,
             consumed,
         } = metric;
+
+        println!("count: {count}");
+        //
+        const PADDING: usize = 30;
+        if count == num_iteration - 1 {
+            break;
+        } else if count < PADDING || num_iteration - PADDING < count {
+            count += 1;
+            continue;
+        } else if count == PADDING {
+            println!("save matrics start");
+            start_notify_sender.send(()).unwrap();
+            count += 1;
+        } else if count == num_iteration - PADDING {
+            println!("save matrics stop");
+            stop_notify_sender.send(()).unwrap();
+            count += 1;
+            continue;
+        } else {
+            count += 1;
+        }
+        //
 
         if status == "Finished" {
             finished += 1;
@@ -471,11 +544,6 @@ async fn save_metrics(
         )
         .unwrap();
         file.flush().unwrap();
-
-        count += 1;
-        if count == num_iteration {
-            break;
-        }
     }
 
     global_sched_controller.signal_shutdown_req().await;
@@ -500,25 +568,27 @@ async fn save_metrics(
 async fn save_cpu_usage(
     dir: PathBuf,
     num_use_cpus: usize,
+    mut start_notifier: tokio::sync::watch::Receiver<()>,
     mut stop_notifier: tokio::sync::watch::Receiver<()>,
     freq: Duration,
 ) {
-    let num_use_cpus = 1;
 
     let file_name = dir.join("cpu_usage.csv");
     let file = File::create(&file_name).unwrap();
     let mut writer = BufWriter::new(file);
 
-    writer.write_all(b"timestamp").unwrap();
-    (0..num_use_cpus).for_each(|i| {
-        writer.write_all(format!(",core_{i}").as_bytes()).unwrap();
-    });
+    writer.write_all(b"timestamp,usage").unwrap();
+    // (0..num_use_cpus).for_each(|i| {
+    //     writer.write_all(format!(",core_{i}").as_bytes()).unwrap();
+    // });
     writer.write_all(b"\n").unwrap();
 
     let mut system = sysinfo::System::new_all();
 
-    let mut ticker = tokio::time::interval(freq);
     let mut counter = 0u64;
+
+    start_notifier.changed().await.unwrap();
+    let mut ticker = tokio::time::interval(freq);
 
     while {
         tokio::select! {
@@ -527,18 +597,25 @@ async fn save_cpu_usage(
         }
     } {
         system.refresh_cpu_usage();
-        // let cpu_list = system.cpus();
+        let cpu_list = system.cpus();
         // let mut sum = 0;
 
         writer.write_all(format!("{counter}").as_bytes()).unwrap();
-        for i in 0..num_use_cpus {
-            // let cpu = cpu_list.get(i).unwrap();
-            // let usage = cpu.cpu_usage() as u8;
-            let usage = system.global_cpu_usage() as u8;
-            writer.write_all(format!(",{}", usage).as_bytes()).unwrap();
+        // for i in 0..num_use_cpus {
+        //     let cpu = cpu_list.get(i).unwrap();
+        //     let usage = cpu.cpu_usage() as u8;
+        //     // let usage = system.global_cpu_usage() as u8;
+        //     writer.write_all(format!(",{}", usage).as_bytes()).unwrap();
 
-            // sum += usage;
-        }
+        //     // sum += usage;
+        // }
+        let usage = cpu_list[0..num_use_cpus]
+            .iter()
+            .map(|cpu| cpu.cpu_usage())
+            .sum::<f32>()
+            / num_use_cpus as f32;
+
+        writer.write_all(format!(",{usage}").as_bytes()).unwrap();
 
         writer.write_all(b"\n").unwrap();
         writer.flush().unwrap();
