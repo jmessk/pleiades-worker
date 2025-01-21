@@ -3,7 +3,10 @@ const iter = 150000000;
 
 async function fetch(input) {
     //
-    count(iter);
+    let count = 0;
+    for (let i = 0; i < iter; i++) {
+        count++;
+    }
 
     console.log("test2 done");
     return "";

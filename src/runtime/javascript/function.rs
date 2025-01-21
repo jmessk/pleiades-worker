@@ -266,7 +266,7 @@ pub fn count(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
         count += 1;
     }
 
-    println!("count: {}", count);
+    // println!("count: {}", count);
 
     Ok(JsValue::from(count))
 }

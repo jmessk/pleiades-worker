@@ -159,8 +159,8 @@ impl GlobalSched {
             //
             let i = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let groupe = format!("test{i}");
-            // let (worker_id, job_deadline) = self.worker_id_manager.get(&groupe).unwrap();
-            let (worker_id, job_deadline) = self.worker_id_manager.get("test1").unwrap();
+            let (worker_id, job_deadline) = self.worker_id_manager.get(&groupe).unwrap();
+            // let (worker_id, job_deadline) = self.worker_id_manager.get("test1").unwrap();
 
             COUNTER.store(i % 6 + 1, std::sync::atomic::Ordering::SeqCst);
             //
@@ -181,8 +181,8 @@ impl GlobalSched {
             //
             // /////
             self.add_contracting(job_deadline);
-            // self.schedule_contract(&groupe, &worker_id).await;
-            self.schedule_contract("default", &worker_id).await;
+            self.schedule_contract(&groupe, &worker_id).await;
+            // self.schedule_contract("default", &worker_id).await;
         }
     }
 
@@ -220,17 +220,25 @@ impl GlobalSched {
                 Command::Contracted { job, groupe } => {
                     // let local_sched = self.local_sched_manager.shortest();
                     // edit
-                    let local_sched = match groupe.as_str() {
+                    match groupe.as_str() {
                         "test1" | "test2" | "test3" | "test6" => {
-                            self.local_sched_manager.shortest()
+                            let local_sched = self.local_sched_manager.shortest_cpu();
+                            local_sched.assign(job).await;
+                            local_sched.increment_cpu_job();
+                            tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
                         }
-                        "test4" | "test5" => self.local_sched_manager.shortest_pending(),
-                        _ => self.local_sched_manager.shortest(),
+                        "test4" | "test5" => {
+                            let local_sched = self.local_sched_manager.shortest_gpu();
+                            local_sched.assign(job).await;
+                            local_sched.increment_gpu_job();
+                            tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
+                        }
+                        _ => {}
                     };
                     // /////
 
-                    local_sched.assign(job).await;
-                    tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
+                    // // local_sched.assign(job).await;
+                    // tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
                     self.sub_contracting(default_job_deadline);
                 }
                 Command::NoJob => self.sub_contracting(default_job_deadline),

@@ -1,0 +1,26 @@
+num_contractors: 16
+num_executors: 110
+num_cpus: 22
+enable_affinity: true
+policy: blocking
+exec_deadline:
+  secs: 30
+  nanos: 0
+job_deadline:
+  secs: 30
+  nanos: 0
+cpu_usage_freq:
+  secs: 5
+  nanos: 0
+---
+elapsed: 296327
+num_jobs: 316
+finished: 316
+cancelled: 0
+runtime_avr:
+  test2_1-0: 94539.68
+  test1_0-0: 93262.2
+  test3_1-1: 94515.67346938775
+  test6_0-0_o: 106790.125
+  test4_1-0_o: 48496.5593220339
+  test5_1-1_o: 49498.5

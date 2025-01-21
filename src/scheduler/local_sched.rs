@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, Mutex},
+    sync::{atomic::AtomicUsize, Arc, Mutex},
     time::Duration,
 };
 use tokio::sync::{mpsc, watch, Semaphore};
@@ -39,6 +39,10 @@ pub struct LocalSched {
     executor: executor::Controller,
     updater: updater::Controller,
     pending_manager: pending_manager::Controller,
+
+    //
+    cpu_job: Arc<AtomicUsize>,
+    gpu_job: Arc<AtomicUsize>,
 }
 
 impl LocalSched {
@@ -58,11 +62,16 @@ impl LocalSched {
         let queuing = Arc::new(Mutex::new(Duration::ZERO));
         let pending = Arc::new(Mutex::new(Duration::ZERO));
 
+        let cpu_job = Arc::new(AtomicUsize::new(0));
+        let gpu_job = Arc::new(AtomicUsize::new(0));
+
         let controller = Controller {
             id,
             command_sender,
             queuing: queuing.clone(),
             pending: pending.clone(),
+            cpu_job: cpu_job.clone(),
+            gpu_job: gpu_job.clone(),
         };
 
         let local_sched = Self {
@@ -76,6 +85,8 @@ impl LocalSched {
             executor: executor_controller,
             updater: updater_controller,
             pending_manager,
+            cpu_job,
+            gpu_job,
         };
 
         (local_sched, controller)
@@ -263,6 +274,9 @@ pub struct Controller {
     pub command_sender: mpsc::Sender<Command>,
     queuing: Arc<Mutex<Duration>>,
     pending: Arc<Mutex<Duration>>,
+
+    cpu_job: Arc<AtomicUsize>,
+    gpu_job: Arc<AtomicUsize>,
 }
 
 impl Controller {
@@ -317,6 +331,34 @@ impl Controller {
 
     pub fn used_time(&self) -> Duration {
         self.queuing() + self.pending()
+    }
+
+    pub fn cpu_job(&self) -> usize {
+        self.cpu_job.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn increment_cpu_job(&self) {
+        self.cpu_job
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn decrement_cpu_job(&self) {
+        self.cpu_job
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn gpu_job(&self) -> usize {
+        self.gpu_job.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn increment_gpu_job(&self) {
+        self.gpu_job
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn decrement_gpu_job(&self) {
+        self.gpu_job
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

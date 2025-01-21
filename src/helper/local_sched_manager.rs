@@ -65,6 +65,26 @@ impl LocalSchedManager {
         &mut item.local_sched
     }
 
+    pub fn shortest_cpu(&mut self) -> &mut local_sched::Controller {
+        let item = self
+            .list
+            .iter_mut()
+            .min_by_key(|item| item.local_sched.cpu_job())
+            .unwrap();
+
+        &mut item.local_sched
+    }
+
+    pub fn shortest_gpu(&mut self) -> &mut local_sched::Controller {
+        let item = self
+            .list
+            .iter_mut()
+            .min_by_key(|item| item.local_sched.gpu_job())
+            .unwrap();
+
+        &mut item.local_sched
+    }
+
     pub fn capacity_sum(&self) -> Duration {
         let used_sum = self.used_sum();
         self.deadline_sum

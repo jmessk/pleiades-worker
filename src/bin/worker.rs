@@ -460,10 +460,28 @@ async fn save_metrics(
     let mut runtime_sum = HashMap::<String, (u32, u64)>::new();
     //
 
-    // while let Some(metric) = updater_controller.recv_metric().await {
+    let mut wormup_timer = tokio::time::interval(Duration::from_secs(60));
+    wormup_timer.tick().await;
+
     while let Some(metric) = tokio::select! {
         metric = updater_controller.recv_metric() => metric,
         _ = tokio::signal::ctrl_c() => None,
+        _ = wormup_timer.tick() => None,
+    } {
+        let _ = metric;
+    }
+
+    println!("start mesurement");
+
+    start_notify_sender.send(()).unwrap();
+    let mut measure_timer = tokio::time::interval(Duration::from_secs(300));
+    measure_timer.tick().await;
+    let start_instant = std::time::Instant::now();
+
+    while let Some(metric) = tokio::select! {
+        metric = updater_controller.recv_metric() => metric,
+        _ = tokio::signal::ctrl_c() => None,
+        _ = measure_timer.tick() => None,
     } {
         let Metric {
             id,
@@ -475,26 +493,30 @@ async fn save_metrics(
             consumed,
         } = metric;
 
+        // if start < start_instant {
+        //     continue;
+        // }
+
         println!("count: {count}");
         //
-        const PADDING: usize = 30;
-        if count == num_iteration - 1 {
-            break;
-        } else if count < PADDING || num_iteration - PADDING < count {
-            count += 1;
-            continue;
-        } else if count == PADDING {
-            println!("save matrics start");
-            start_notify_sender.send(()).unwrap();
-            count += 1;
-        } else if count == num_iteration - PADDING {
-            println!("save matrics stop");
-            stop_notify_sender.send(()).unwrap();
-            count += 1;
-            continue;
-        } else {
-            count += 1;
-        }
+        // const PADDING: usize = 100;
+        // if count == num_iteration - 1 {
+        //     break;
+        // } else if count < PADDING || num_iteration - PADDING < count {
+        //     count += 1;
+        //     continue;
+        // } else if count == PADDING {
+        //     println!("save matrics start");
+        //     start_notify_sender.send(()).unwrap();
+        //     count += 1;
+        // } else if count == num_iteration - PADDING {
+        //     println!("save matrics stop");
+        //     stop_notify_sender.send(()).unwrap();
+        //     count += 1;
+        //     continue;
+        // } else {
+        //     count += 1;
+        // }
         //
 
         if status == "Finished" {
@@ -544,8 +566,11 @@ async fn save_metrics(
         )
         .unwrap();
         file.flush().unwrap();
+
+        count += 1;
     }
 
+    stop_notify_sender.send(()).unwrap();
     global_sched_controller.signal_shutdown_req().await;
     let elapsed = last_instant
         .map(|last| last - first_instant.unwrap())
@@ -572,7 +597,6 @@ async fn save_cpu_usage(
     mut stop_notifier: tokio::sync::watch::Receiver<()>,
     freq: Duration,
 ) {
-
     let file_name = dir.join("cpu_usage.csv");
     let file = File::create(&file_name).unwrap();
     let mut writer = BufWriter::new(file);
