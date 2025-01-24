@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for item in  overloaded-110 overloaded-110 overloaded-110 cooperative-6 cooperative-10; do
+for item in overloaded-66 overloaded-88 overloaded-110 cooperative-6 cooperative-10; do
     echo "Running $item"
 
     for i in {1..3}; do
