@@ -1,9 +1,12 @@
+# 2025-0124-1430
+
+```bash
 #!/bin/bash
 
 for item in blocking cooperative-6 overloaded-60 overloaded-100 overloaded-140 ; do
     echo "Running $item"
 
-    for i in {1..5}; do
+    for i in {1..2}; do
         ssh jme@node1.local "cd /home/jme/workspace/mecrm-server-docker && docker compose down && docker compose up -d"
         cargo run --release --example job_generator3 -- -n 120
         # ./run_worker.bash --config ./config/$item.yml -n 0
@@ -12,3 +15,6 @@ for item in blocking cooperative-6 overloaded-60 overloaded-100 overloaded-140 ;
 done
 
 echo "Done"
+```
+
+- ちょっと良くなったので，この後 3 回にしてやってみる
