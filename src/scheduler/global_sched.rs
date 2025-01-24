@@ -153,16 +153,16 @@ impl GlobalSched {
 
         static COUNTER: AtomicUsize = AtomicUsize::new(1);
         for _ in 0..max {
-            // let (worker_id, job_deadline) = self.worker_id_manager.get_default();
+            let (worker_id, job_deadline) = self.worker_id_manager.get_default();
 
             // edit
             //
-            let i = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let groupe = format!("test{i}");
-            let (worker_id, job_deadline) = self.worker_id_manager.get(&groupe).unwrap();
+            // let i = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            // let groupe = format!("test{i}");
+            // let (worker_id, job_deadline) = self.worker_id_manager.get(&groupe).unwrap();
             // let (worker_id, job_deadline) = self.worker_id_manager.get("test1").unwrap();
 
-            COUNTER.store(i % 6 + 1, std::sync::atomic::Ordering::SeqCst);
+            // COUNTER.store(i % 6 + 1, std::sync::atomic::Ordering::SeqCst);
             //
             // /////
 
@@ -181,8 +181,8 @@ impl GlobalSched {
             //
             // /////
             self.add_contracting(job_deadline);
-            self.schedule_contract(&groupe, &worker_id).await;
-            // self.schedule_contract("default", &worker_id).await;
+            // self.schedule_contract(&groupe, &worker_id).await;
+            self.schedule_contract("default", &worker_id).await;
         }
     }
 
@@ -221,6 +221,7 @@ impl GlobalSched {
                     // let local_sched = self.local_sched_manager.shortest();
                     // edit
                     match groupe.as_str() {
+                        "default" => self.local_sched_manager.shortest().assign(job).await,
                         "test1" | "test2" | "test3" | "test6" => {
                             let local_sched = self.local_sched_manager.shortest_cpu();
                             local_sched.assign(job).await;

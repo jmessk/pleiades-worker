@@ -177,12 +177,11 @@ impl Updater {
         request: update::Request,
     ) -> Metric {
         //
-        let splited = request.job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
-            .split("-")
-            .collect::<Vec<&str>>();
-        let sleep_time = splited[1].parse::<u64>().unwrap();
-        // println!("sleep_time: {}", sleep_time);
-        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+        // let splited = request.job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
+        //     .split("-")
+        //     .collect::<Vec<&str>>();
+        // let sleep_time = splited[1].parse::<u64>().unwrap();
+        // tokio::time::sleep(Duration::from_secs(sleep_time)).await;
         //
 
         match request.job.status {
