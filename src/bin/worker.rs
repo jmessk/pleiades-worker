@@ -71,44 +71,52 @@ fn main() {
 
     let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
 
-    if config.enable_affinity {
-        runtime_builder
-            .worker_threads(num_tokio_workers)
-            // .on_thread_start(move || {
-            //     static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
-            //     let count = CORE_COUNT.load(std::sync::atomic::Ordering::SeqCst);
-            //     // println!("count: {count}");
-            //     if count < num_tokio_workers {
-            //         let id = num_cores
-            //             - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-            //             - 1;
-            //         core_affinity::set_for_current(core_affinity::CoreId { id });
-            //         println!("tokio worker is set to core {}", id);
-            //     } else if count < num_tokio_workers + num_executors {
-            //         let id = (CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-            //             - num_tokio_workers)
-            //             % num_use_cores;
-            //         core_affinity::set_for_current(core_affinity::CoreId { id });
-            //         println!("executor is set to core {}", id);
-            //     }
-            // });
-            .on_thread_start(move || {
-                static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
-                let count = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                // println!("count: {count}");
-                if count < num_tokio_workers {
-                    let first = num_cores - num_tokio_workers;
-                    let list = (first..num_cores).collect::<Vec<usize>>();
+    match config.affinity_mode {
+        0 => {}
+        1 => {
+            runtime_builder
+                .worker_threads(num_tokio_workers)
+                .on_thread_start(move || {
+                    static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
+                    let count = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                    affinity::set_thread_affinity(&list).unwrap();
-                    println!("tokio worker is set to core {list:?}");
-                } else if count < num_tokio_workers + num_executors {
-                    let list = (0..num_use_cores).collect::<Vec<usize>>();
+                    if count < num_tokio_workers {
+                        let first = num_cores - num_tokio_workers;
+                        let list = (first..num_cores).collect::<Vec<usize>>();
 
-                    affinity::set_thread_affinity(&list).unwrap();
-                    println!("executor is set to core {list:?}");
-                }
-            });
+                        affinity::set_thread_affinity(&list).unwrap();
+                        println!("tokio worker is set to core {list:?}");
+                    } else if count < num_tokio_workers + num_executors {
+                        let list = (0..num_use_cores).collect::<Vec<usize>>();
+
+                        affinity::set_thread_affinity(&list).unwrap();
+                        println!("executor is set to core {list:?}");
+                    }
+                });
+        }
+        2 => {
+            runtime_builder
+                .worker_threads(num_tokio_workers)
+                .on_thread_start(move || {
+                    static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
+                    let count = CORE_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+                    // println!("count: {count}");
+                    if count < num_tokio_workers {
+                        let id = num_cores
+                            - CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                            - 1;
+                        core_affinity::set_for_current(core_affinity::CoreId { id });
+                        println!("tokio worker is set to core {}", id);
+                    } else if count < num_tokio_workers + num_executors {
+                        let id = (CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                            - num_tokio_workers)
+                            % num_use_cores;
+                        core_affinity::set_for_current(core_affinity::CoreId { id });
+                        println!("executor is set to core {}", id);
+                    }
+                });
+        }
+        _ => panic!("invalid affinity"),
     }
     let runtime = runtime_builder.enable_all().build().unwrap();
 
@@ -184,15 +192,13 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
             executor.run();
         });
 
-        let policy = config.policy.clone();
+        let policy = match config.policy.as_str() {
+            "cooperative" => local_sched::Policy::Cooperative,
+            "blocking" => local_sched::Policy::Blocking,
+            _ => panic!("invalid policy"),
+        };
         join_set.spawn(async move {
-            local_sched
-                .run(match policy.as_str() {
-                    "cooperative" => local_sched::Policy::Cooperative,
-                    "blocking" => local_sched::Policy::Blocking,
-                    _ => panic!("invalid policy"),
-                })
-                .await;
+            local_sched.run(policy).await;
         });
     });
 
@@ -216,21 +222,7 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
     //     )
     //     .await;
     worker_id_manager
-        .insert(
-            "default",
-            &[
-                "test1_0-0",
-                "test2_1-0",
-                "test3_1-1",
-                "test4_1-0",
-                "test4_1-0_o",
-                "test5_1-1",
-                "test5_1-1_o",
-                "test6_0-0",
-                "test6_0-0_o",
-            ],
-            config.job_deadline,
-        )
+        .insert("default", &["pleiades+example"], config.job_deadline)
         .await;
 
     worker_id_manager
@@ -281,11 +273,18 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
 
     // Initialize GlobalSched
     //
+    let policy = match config.policy.as_str() {
+        "cooperative" => local_sched::Policy::Cooperative,
+        "blocking" => local_sched::Policy::Blocking,
+        _ => panic!("invalid policy"),
+    };
+
     let (mut global_sched, global_sched_controller) = GlobalSched::new(
         contractor_controller,
         local_sched_manager,
         worker_id_manager,
         notify_receiver,
+        policy,
     );
 
     join_set.spawn(async move {
@@ -303,7 +302,7 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
     //     global_sched_controller,
     // ));
     if let Some(num_iteration) = args.num_iteration {
-        let timestamp = chrono::Local::now().format("%Y-%m%d-%H%M%S");
+        let timestamp = chrono::Local::now().format("%Y_%m%d_%H-%M-%S");
         let dir = PathBuf::from(format!("./metrics/{timestamp}"));
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -358,7 +357,7 @@ struct WorkerConfig {
     num_contractors: usize,
     num_executors: usize,
     num_cpus: usize,
-    enable_affinity: bool,
+    affinity_mode: usize,
     policy: String,
     #[serde(deserialize_with = "deserialize_duration")]
     exec_deadline: Duration,
@@ -374,7 +373,7 @@ impl Default for WorkerConfig {
             num_contractors: 1,
             num_executors: 1,
             num_cpus: 1,
-            enable_affinity: false,
+            affinity_mode: 0,
             policy: "cooperative".to_string(),
             exec_deadline: Duration::from_millis(300),
             job_deadline: Duration::from_millis(100),
@@ -395,7 +394,12 @@ impl WorkerConfig {
 async fn save_summary(
     dir: PathBuf,
     config: WorkerConfig,
-    (elapsed, finished, cancelled, each_arv): (Duration, u64, u64, HashMap<String, f64>),
+    (elapsed, finished, cancelled, runtime_sum): (
+        Duration,
+        u64,
+        u64,
+        HashMap<String, (u32, u64, u64)>,
+    ),
 ) {
     let file = File::create(dir.join("summary.yml")).unwrap();
     let mut writer = BufWriter::new(file);
@@ -419,18 +423,33 @@ cancelled: {cancelled}
         )
         .unwrap();
 
-    writer.write_all("runtime_avr:\n".as_bytes()).unwrap();
-    each_arv.iter().for_each(|(runtime, avr)| {
-        writer
-            .write_all(format!("  {runtime}: {avr}\n").as_bytes())
-            .unwrap();
-    });
-    // each_arv.iter().enumerate().for_each(|(i, &x)| {
-    //     let i = i + 1;
+    // writer.write_all("elapsed_avr:\n".as_bytes()).unwrap();
+    // runtime_elapsed_arv.iter().for_each(|(runtime, avr)| {
     //     writer
-    //         .write_all(format!("  - test{i}: {x}\n").as_bytes())
+    //         .write_all(format!("  {runtime}: {avr}\n").as_bytes())
     //         .unwrap();
     // });
+
+    writer.write_all("runtime:\n".as_bytes()).unwrap();
+    runtime_sum
+        .iter()
+        .for_each(|(runtime, (count, elapsed, consumed))| {
+            writer
+                .write_all(
+                    format!(
+                        r"
+  {runtime}:
+    num: {count}
+    elapsed_avr: {elapsed}
+    consumed_avr: {consumed}",
+                        count = count,
+                        elapsed = *elapsed as f64 / *count as f64,
+                        consumed = *consumed as f64 / *count as f64,
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+        });
 }
 
 async fn save_metrics(
@@ -440,7 +459,7 @@ async fn save_metrics(
     num_iteration: usize,
     start_notify_sender: tokio::sync::watch::Sender<()>,
     stop_notify_sender: tokio::sync::watch::Sender<()>,
-) -> (Duration, u64, u64, HashMap<String, f64>) {
+) -> (Duration, u64, u64, HashMap<String, (u32, u64, u64)>) {
     let file = File::create(dir.join("metrics.csv")).unwrap();
     let mut file = BufWriter::new(file);
 
@@ -449,16 +468,16 @@ async fn save_metrics(
 
     let mut first_instant = None;
     let mut last_instant = None;
-    let mut count = 0;
+    // let mut count = 0;
     let mut finished = 0;
     let mut canceled = 0;
 
     //
     // let mut each_sum = [0u64; 6];
-    let mut runtime_sum = HashMap::<String, (u32, u64)>::new();
+    let mut runtime_sum = HashMap::<String, (u32, u64, u64)>::new();
     //
 
-    let mut wormup_timer = tokio::time::interval(Duration::from_secs(60));
+    let mut wormup_timer = tokio::time::interval(Duration::from_secs(10));
     wormup_timer.tick().await;
 
     while let Some(metric) = tokio::select! {
@@ -472,9 +491,9 @@ async fn save_metrics(
     println!("start mesurement");
 
     start_notify_sender.send(()).unwrap();
-    let mut measure_timer = tokio::time::interval(Duration::from_secs(600));
+    let mut measure_timer = tokio::time::interval(Duration::from_secs(60));
     measure_timer.tick().await;
-    let start_instant = std::time::Instant::now();
+    // let start_instant = std::time::Instant::now();
 
     while let Some(metric) = tokio::select! {
         metric = updater_controller.recv_metric() => metric,
@@ -490,32 +509,6 @@ async fn save_metrics(
             elapsed,
             consumed,
         } = metric;
-
-        // if start < start_instant {
-        //     continue;
-        // }
-
-        println!("count: {count}");
-        //
-        // const PADDING: usize = 100;
-        // if count == num_iteration - 1 {
-        //     break;
-        // } else if count < PADDING || num_iteration - PADDING < count {
-        //     count += 1;
-        //     continue;
-        // } else if count == PADDING {
-        //     println!("save matrics start");
-        //     start_notify_sender.send(()).unwrap();
-        //     count += 1;
-        // } else if count == num_iteration - PADDING {
-        //     println!("save matrics stop");
-        //     stop_notify_sender.send(()).unwrap();
-        //     count += 1;
-        //     continue;
-        // } else {
-        //     count += 1;
-        // }
-        //
 
         if status == "Finished" {
             finished += 1;
@@ -547,11 +540,12 @@ async fn save_metrics(
 
         runtime_sum
             .entry(runtime.clone())
-            .and_modify(|(count, sum)| {
+            .and_modify(|(count, elapsed_sum, consumed_sum)| {
                 *count += 1;
-                *sum += elapsed.as_millis() as u64;
+                *elapsed_sum += elapsed.as_millis() as u64;
+                *consumed_sum += consumed.as_millis() as u64;
             })
-            .or_insert((1, elapsed.as_millis() as u64));
+            .or_insert((1, elapsed.as_millis() as u64, consumed.as_millis() as u64));
         //
 
         file.write_all(
@@ -565,7 +559,7 @@ async fn save_metrics(
         .unwrap();
         file.flush().unwrap();
 
-        count += 1;
+        // count += 1;
     }
 
     stop_notify_sender.send(()).unwrap();
@@ -579,13 +573,25 @@ async fn save_metrics(
     //     .iter()
     //     .map(|&x| x as f64 / (num_iteration as f64 / 6.0))
     //     .collect::<Vec<f64>>();
-    let runtime_avr = runtime_sum
-        .into_iter()
-        .map(|(runtime, (count, sum))| (runtime, sum as f64 / (count as f64)))
-        .collect::<HashMap<String, f64>>();
+    // let runtime_elapsed_avr = runtime_elapsed_sum
+    //     .into_iter()
+    //     .map(|(runtime, (count, sum))| (runtime, sum as f64 / (count as f64)))
+    //     .collect::<HashMap<String, f64>>();
     //
 
-    (elapsed, finished, canceled, runtime_avr)
+    // let runtime_consumed_avr = runtime_consumed_sum
+    //     .into_iter()
+    //     .map(|(runtime, (count, sum))| (runtime, sum as f64 / (count as f64)))
+    //     .collect::<HashMap<String, f64>>();
+
+    (
+        elapsed,
+        finished,
+        canceled,
+        // runtime_elapsed_avr,
+        // runtime_consumed_avr,
+        runtime_sum,
+    )
 }
 
 async fn save_cpu_usage(

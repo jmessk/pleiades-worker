@@ -41,6 +41,7 @@ pub struct LocalSched {
     pending_manager: pending_manager::Controller,
 
     //
+    num_jobs: Arc<AtomicUsize>,
     cpu_job: Arc<AtomicUsize>,
     gpu_job: Arc<AtomicUsize>,
 }
@@ -62,6 +63,7 @@ impl LocalSched {
         let queuing = Arc::new(Mutex::new(Duration::ZERO));
         let pending = Arc::new(Mutex::new(Duration::ZERO));
 
+        let num_jobs = Arc::new(AtomicUsize::new(0));
         let cpu_job = Arc::new(AtomicUsize::new(0));
         let gpu_job = Arc::new(AtomicUsize::new(0));
 
@@ -70,6 +72,7 @@ impl LocalSched {
             command_sender,
             queuing: queuing.clone(),
             pending: pending.clone(),
+            num_jobs: num_jobs.clone(),
             cpu_job: cpu_job.clone(),
             gpu_job: gpu_job.clone(),
         };
@@ -85,6 +88,7 @@ impl LocalSched {
             executor: executor_controller,
             updater: updater_controller,
             pending_manager,
+            num_jobs,
             cpu_job,
             gpu_job,
         };
@@ -191,16 +195,31 @@ impl LocalSched {
                         self.controller.sub_queuing(prev_rem_time);
                         self.controller.add_pending(job.remaining);
                         self.enqueue_pend(job).await;
-                        println!("job pending");
 
                         // if !shutdown_flag {
                         //     self.signal_local_action().await;
                         // }
                     }
                     JobStatus::Finished(_) | JobStatus::Cancelled => {
+                        // /////
+                        //
+                        match job.lambda.runtime.as_str() {
+                            "test1_0-0" | "test2_1-0" | "test3_1-1" | "test6_0-0" => {
+                                self.controller.decrement_cpu_jobs();
+                            }
+                            "test4_1-0" | "test5_1-1" => {
+                                self.controller.decrement_gpu_jobs();
+                            }
+                            _ => {}
+                        };
+                        //
+                        // /////
+
                         self.controller.sub_queuing(prev_rem_time);
                         self.updater.update_job(job).await;
 
+                        self.num_jobs
+                            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                         // if !shutdown_flag {
                         //     self.signal_local_action().await;
                         // }
@@ -236,11 +255,16 @@ impl LocalSched {
                                 let handle = self.pending_manager.register(job).await;
                                 let response = handle.response_receiver.await.unwrap();
 
+                                println!("pending (unreachable)");
+
                                 response.job
                             }
                             JobStatus::Finished(_) | JobStatus::Cancelled => {
                                 self.controller.sub_queuing(prev_rem_time);
                                 self.updater.update_job(job).await;
+
+                                self.num_jobs
+                                    .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
 
                                 if !shutdown_flag {
                                     self.signal_local_action().await;
@@ -274,6 +298,7 @@ pub struct Controller {
     queuing: Arc<Mutex<Duration>>,
     pending: Arc<Mutex<Duration>>,
 
+    num_jobs: Arc<AtomicUsize>,
     cpu_job: Arc<AtomicUsize>,
     gpu_job: Arc<AtomicUsize>,
 }
@@ -282,6 +307,8 @@ impl Controller {
     pub async fn assign(&mut self, job: Job) {
         // this is necessary to avoid double counting
         self.add_queuing(job.remaining);
+        self.num_jobs
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let prev_rem_time = job.remaining;
         let request = Command::Enqueue(enqueue::Request { job, prev_rem_time });
@@ -332,30 +359,34 @@ impl Controller {
         self.queuing() + self.pending()
     }
 
-    pub fn cpu_job(&self) -> usize {
+    pub fn num_jobs(&self) -> usize {
+        self.num_jobs.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn cpu_jobs(&self) -> usize {
         self.cpu_job.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn increment_cpu_job(&self) {
+    pub fn increment_cpu_jobs(&self) {
         self.cpu_job
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    pub fn decrement_cpu_job(&self) {
+    pub fn decrement_cpu_jobs(&self) {
         self.cpu_job
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    pub fn gpu_job(&self) -> usize {
+    pub fn gpu_jobs(&self) -> usize {
         self.gpu_job.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn increment_gpu_job(&self) {
+    pub fn increment_gpu_jobs(&self) {
         self.gpu_job
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    pub fn decrement_gpu_job(&self) {
+    pub fn decrement_gpu_jobs(&self) {
         self.gpu_job
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }

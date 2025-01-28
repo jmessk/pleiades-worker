@@ -1,7 +1,7 @@
 num_contractors: 16
-num_executors: 22
-num_cpus: 22
-enable_affinity: true
+num_executors: 20
+num_cpus: 20
+affinity_mode: 1
 policy: cooperative
 exec_deadline: 180s
 job_deadline: 30s

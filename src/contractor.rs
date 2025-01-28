@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, oneshot, Semaphore};
 
 use crate::{
     data_manager,
-    pleiades_type::{Job, JobStatus, Lambda},
+    pleiades_type::{Blob, Job, JobStatus, Lambda},
 };
 
 /// Contractor
@@ -200,14 +200,14 @@ impl Contractor {
 
         // download input and lambda code
         //
-        let get_input_handle = data_manager_controller
-            .get_blob(job_info.input.data_id)
-            .await;
+        // let get_input_handle = data_manager_controller
+        //     .get_blob(job_info.input.data_id)
+        //     .await;
         let get_code_handle = data_manager_controller
             .get_blob(job_info.lambda.data_id)
             .await;
         //
-        let input = get_input_handle.recv().await.blob;
+        // let input = get_input_handle.recv().await.blob;
         let code = get_code_handle.recv().await.blob;
         //
         // ////
@@ -223,19 +223,27 @@ impl Contractor {
                 runtime: job_info.lambda.runtime,
                 code: code.expect("code"),
             }),
-            input: Box::new(input.expect("input")),
+            // input: Box::new(input.expect("input")),
+            input: Box::new(Blob {
+                id: String::default(),
+                data: bytes::Bytes::default(),
+            }),
 
             // instant
             contracted_at,
         };
 
+        // /////
         //
-        // let splited = job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
-        //     .split("-")
-        //     .collect::<Vec<&str>>();
-        // let sleep_time = splited[0].parse::<u64>().unwrap();
-        // tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+        println!("got job");
+
+        let splited = job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
+            .split("-")
+            .collect::<Vec<&str>>();
+        let sleep_time = splited[0].parse::<u64>().unwrap();
+        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
         //
+        // /////
 
         request
             .response_sender

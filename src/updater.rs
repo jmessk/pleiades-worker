@@ -87,7 +87,7 @@ impl Updater {
                             Self::task_update_job_metrics(client, data_manager_controller, request)
                                 .await;
                         if enable_metrics {
-                            metric_sender.send(metric).await.unwrap();
+                            metric_sender.send(metric).await.unwrap_or(());
                         }
                         drop(permit);
                     });
@@ -177,11 +177,11 @@ impl Updater {
         request: update::Request,
     ) -> Metric {
         //
-        // let splited = request.job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
-        //     .split("-")
-        //     .collect::<Vec<&str>>();
-        // let sleep_time = splited[1].parse::<u64>().unwrap();
-        // tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+        let splited = request.job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
+            .split("-")
+            .collect::<Vec<&str>>();
+        let sleep_time = splited[1].parse::<u64>().unwrap();
+        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
         //
 
         match request.job.status {

@@ -1,11 +1,10 @@
-const max = 20000;
 const iter = 150000000;
+const duration = 10000;
 
 async function fetch(input) {
     //
-    await sleep(max);
+    await sleep(duration);
 
-    console.log("test4 done");
     return "";
 }
 

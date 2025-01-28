@@ -32,6 +32,7 @@ tokio-console = "0.1.13"
 console-subscriber = "0.4.1"
 sysinfo = "0.33.1"
 affinity = "0.1.2"
+thread-priority = "1.2.0"
 
 [dev-dependencies]
 criterion = "0.5.1"

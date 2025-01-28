@@ -4,10 +4,9 @@ use std::{
 };
 use tokio::sync::{mpsc, watch, Semaphore};
 
-use crate::{
-    contractor, helper::LocalSchedManager, pleiades_type::Job,
-    WorkerIdManager,
-};
+use crate::{contractor, helper::LocalSchedManager, pleiades_type::Job, WorkerIdManager};
+
+use super::local_sched::Policy;
 
 /// Scheduler
 ///
@@ -27,6 +26,8 @@ pub struct GlobalSched {
 
     local_sched_manager: LocalSchedManager,
     worker_id_manager: WorkerIdManager,
+
+    policy: Policy,
 }
 
 impl GlobalSched {
@@ -40,6 +41,7 @@ impl GlobalSched {
         local_sched_manager: LocalSchedManager,
         worker_id_manager: WorkerIdManager,
         action_receiver: watch::Receiver<()>,
+        policy: Policy,
     ) -> (Self, Controller) {
         let (command_sender, command_receiver) = mpsc::channel(128);
 
@@ -54,6 +56,7 @@ impl GlobalSched {
             contractor: contractor_controller,
             local_sched_manager,
             worker_id_manager,
+            policy,
         };
 
         (global_sched, controller)
@@ -71,7 +74,10 @@ impl GlobalSched {
             global_sched,
         ));
 
-        self.sched_loop().await;
+        match self.policy {
+            Policy::Blocking => self.blocking().await,
+            Policy::Cooperative => self.cooperative().await,
+        }
 
         tracing::info!("shutdown");
     }
@@ -152,21 +158,18 @@ impl GlobalSched {
 
         tracing::debug!("capacity: {capacity:?}, available_jobs: {available_jobs}, max: {max}",);
 
+        // let (worker_id, job_deadline) = self.worker_id_manager.get_default();
         static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
         for _ in 0..max {
             tokio::time::sleep(Duration::from_millis(10)).await;
 
-            let (worker_id, job_deadline) = self.worker_id_manager.get_default();
-
             // edit
             //
-            // let i = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            // let groupe = format!("test{i}");
-            // let (worker_id, job_deadline) = self.worker_id_manager.get(&groupe).unwrap();
-            // let (worker_id, job_deadline) = self.worker_id_manager.get("test1").unwrap();
-
-            // COUNTER.store(i % 6 + 1, std::sync::atomic::Ordering::SeqCst);
+            let i = COUNTER.load(std::sync::atomic::Ordering::SeqCst);
+            let groupe = format!("test{i}");
+            let (worker_id, job_deadline) = self.worker_id_manager.get(&groupe).unwrap();
+            COUNTER.store(i % 6 + 1, std::sync::atomic::Ordering::SeqCst);
             //
             // /////
 
@@ -184,9 +187,10 @@ impl GlobalSched {
             // COUNTER.store(i % 2, std::sync::atomic::Ordering::SeqCst);
             //
             // /////
+
             self.add_contracting(job_deadline);
-            // self.schedule_contract(&groupe, &worker_id).await;
-            self.schedule_contract("default", &worker_id).await;
+            self.schedule_contract(&groupe, &worker_id).await;
+            // self.schedule_contract("default", &worker_id).await;
         }
     }
 
@@ -200,12 +204,7 @@ impl GlobalSched {
 }
 
 impl GlobalSched {
-    /// cooperative_pipeline
-    ///
-    ///
-    ///
-    ///
-    async fn sched_loop(&mut self) {
+    async fn blocking(&mut self) {
         let (default_worker_id, default_job_deadline) = self.worker_id_manager.get_default();
 
         // self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
@@ -213,7 +212,6 @@ impl GlobalSched {
 
         let controller = self.global_sched.clone();
         let contract = tokio::spawn(async move {
-
             loop {
                 controller.signal_local_action().await;
                 tokio::time::sleep(Duration::from_millis(200)).await;
@@ -223,6 +221,52 @@ impl GlobalSched {
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Contracted { job, groupe } => {
+                    // self.local_sched_manager.view();
+                    let local_sched = self.local_sched_manager.shortest();
+
+                    local_sched.assign(job).await;
+                    tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
+                    self.sub_contracting(default_job_deadline);
+                }
+                Command::NoJob => self.sub_contracting(default_job_deadline),
+                Command::LocalAction => {
+                    self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
+                        .await
+                }
+                Command::ShutdownReq => {
+                    self.schedule_shutdown().await;
+                    contract.abort();
+                }
+                Command::ShutdownDone => {
+                    self.local_sched_manager.signal_shutdown_req().await;
+                    break;
+                }
+            }
+        }
+    }
+    /// cooperative_pipeline
+    ///
+    ///
+    ///
+    ///
+    async fn cooperative(&mut self) {
+        let (default_worker_id, default_job_deadline) = self.worker_id_manager.get_default();
+
+        // self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
+        //     .await;
+
+        let controller = self.global_sched.clone();
+        let contract = tokio::spawn(async move {
+            loop {
+                controller.signal_local_action().await;
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        });
+
+        while let Some(command) = self.command_receiver.recv().await {
+            match command {
+                Command::Contracted { job, groupe } => {
+                    self.local_sched_manager.view();
                     // let local_sched = self.local_sched_manager.shortest();
                     // edit
                     match groupe.as_str() {
@@ -230,13 +274,13 @@ impl GlobalSched {
                         "test1" | "test2" | "test3" | "test6" => {
                             let local_sched = self.local_sched_manager.shortest_cpu();
                             local_sched.assign(job).await;
-                            local_sched.increment_cpu_job();
+                            local_sched.increment_cpu_jobs();
                             tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
                         }
                         "test4" | "test5" => {
                             let local_sched = self.local_sched_manager.shortest_gpu();
                             local_sched.assign(job).await;
-                            local_sched.increment_gpu_job();
+                            local_sched.increment_gpu_jobs();
                             tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
                         }
                         _ => {}

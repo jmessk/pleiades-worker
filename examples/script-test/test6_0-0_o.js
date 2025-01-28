@@ -1,5 +1,5 @@
-const max = 20000;
 const iter = 150000000;
+const duration = 10000;
 
 async function fetch(input) {
     let count = 0;
@@ -11,7 +11,6 @@ async function fetch(input) {
         count++;
     }
 
-    console.log("test6_o done");
     return "";
 }
 

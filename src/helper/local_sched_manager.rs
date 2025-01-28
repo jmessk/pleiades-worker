@@ -22,6 +22,19 @@ impl LocalSchedManager {
         self.list.len()
     }
 
+    pub fn view(&self) {
+        println!();
+
+        for item in &self.list {
+            let id = item.local_sched.id;
+            let numm_jobs = item.local_sched.num_jobs();
+
+            println!("Local Scheduler {id}: \tnum_jobs: {numm_jobs}",);
+        }
+
+        println!();
+    }
+
     pub fn shortest(&mut self) -> &mut local_sched::Controller {
         let item = self
             .list
@@ -41,7 +54,7 @@ impl LocalSchedManager {
 
         &mut item.local_sched
     }
- 
+
     pub fn shortest_pending(&mut self) -> &mut local_sched::Controller {
         let item = self
             .list

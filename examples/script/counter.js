@@ -1,5 +1,5 @@
 async function fetch(input) {
-    // console.log("counter.js");
+    // console.log("counter.js started");
 
     let counter = 0;
     for (let i = 0; i < 100000000; i++) {
