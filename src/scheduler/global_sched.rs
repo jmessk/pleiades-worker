@@ -5,7 +5,7 @@ use std::{
 use tokio::sync::{mpsc, watch, Semaphore};
 
 use crate::{
-    contractor, helper::LocalSchedManager, pleiades_type::Job, scheduler::local_sched,
+    contractor, helper::LocalSchedManager, pleiades_type::Job,
     WorkerIdManager,
 };
 
@@ -82,6 +82,7 @@ impl GlobalSched {
     ) {
         while action_receiver.changed().await.is_ok() {
             global_sched.signal_local_action().await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
     }
 
@@ -152,7 +153,10 @@ impl GlobalSched {
         tracing::debug!("capacity: {capacity:?}, available_jobs: {available_jobs}, max: {max}",);
 
         static COUNTER: AtomicUsize = AtomicUsize::new(1);
+
         for _ in 0..max {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+
             let (worker_id, job_deadline) = self.worker_id_manager.get_default();
 
             // edit
@@ -209,9 +213,10 @@ impl GlobalSched {
 
         let controller = self.global_sched.clone();
         let contract = tokio::spawn(async move {
+
             loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
                 controller.signal_local_action().await;
+                tokio::time::sleep(Duration::from_millis(200)).await;
             }
         });
 

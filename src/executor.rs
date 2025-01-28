@@ -79,9 +79,6 @@ impl Executor {
 
         while let Some(command) = self.command_receiver.blocking_recv() {
             tracing::debug!("Executor {}: start execute", self.id);
-            // println!("Executor {}: start execute", self.id);
-
-            // println!("Executor {}: len {}", self.id, self.command_receiver.len());
 
             match command {
                 Command::Register(request) => self.task_execute_job(request),

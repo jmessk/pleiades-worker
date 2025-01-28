@@ -1,6 +1,5 @@
 use std::{
-    io::{Read as _, Write as _},
-    time::Duration,
+    io::{Read as _, Write as _}, result, time::Duration
 };
 
 use boa_engine::{
@@ -266,7 +265,28 @@ pub fn count(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
         count += 1;
     }
 
-    // println!("count: {}", count);
+    println!("count: {}", count);
 
     Ok(JsValue::from(count))
+}
+
+pub fn fib(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    fn fib(n: u64) -> u64 {
+        match n {
+            0 => 0,
+            1 => 1,
+            _ => fib(n - 1) + fib(n - 2),
+        }
+    }
+
+    let i = match args.first() {
+        Some(max) => max.to_number(context)? as u64,
+        None => 0,
+    };
+
+    let result = fib(i);
+
+    println!("count: {}", result);
+
+    Ok(JsValue::from(result))
 }

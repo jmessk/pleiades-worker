@@ -235,7 +235,6 @@ impl LocalSched {
                             JobStatus::Pending(_) => {
                                 let handle = self.pending_manager.register(job).await;
                                 let response = handle.response_receiver.await.unwrap();
-                                println!("job pending");
 
                                 response.job
                             }
@@ -243,9 +242,9 @@ impl LocalSched {
                                 self.controller.sub_queuing(prev_rem_time);
                                 self.updater.update_job(job).await;
 
-                                // if !shutdown_flag {
-                                //     self.signal_local_action().await;
-                                // }
+                                if !shutdown_flag {
+                                    self.signal_local_action().await;
+                                }
 
                                 break;
                             }

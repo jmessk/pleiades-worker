@@ -144,6 +144,14 @@ impl JsContext {
                 NativeFunction::from_fn_ptr(function::count),
             )
             .unwrap();
+
+        context
+            .register_global_builtin_callable(
+                js_string!("fib"),
+                1,
+                NativeFunction::from_fn_ptr(function::fib),
+            )
+            .unwrap();
     }
 
     fn register_builtin_modules(context: &mut Context) {

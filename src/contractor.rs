@@ -196,7 +196,7 @@ impl Contractor {
         //     }
         // };
 
-        println!("{}", job_info.lambda.runtime);
+        // println!("{}", job_info.lambda.runtime);
 
         // download input and lambda code
         //

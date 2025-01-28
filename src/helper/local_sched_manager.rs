@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use tokio::task::JoinSet;
-
 use crate::scheduler::local_sched;
 
 struct Item {

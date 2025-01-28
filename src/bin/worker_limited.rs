@@ -1,9 +1,7 @@
 use clap::Parser;
-use core::num;
 use pleiades_worker::scheduler::global_sched;
 use pleiades_worker::updater;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::io::prelude::*;
 use std::{
     fs::File,
@@ -22,8 +20,6 @@ use pleiades_worker::{
     Contractor, DataManager, Fetcher, PendingManager, Updater, WorkerIdManager,
 };
 
-// #[tokio::main(flavor = "multi_thread")]
-// async fn main() {
 fn main() {
     // Load .env file
     //
@@ -97,7 +93,7 @@ fn main() {
             .on_thread_start(move || {
                 static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
                 let count = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                // println!("count: {count}");
+
                 if count < num_tokio_workers {
                     let first = num_cores - num_tokio_workers;
                     let list = (first..num_cores).collect::<Vec<usize>>();
@@ -116,9 +112,7 @@ fn main() {
 
     runtime.block_on(async move {
         worker(args, config).await.join_all().await;
-        // tokio::time::sleep(Duration::from_secs(10)).await;
     });
-    // worker(config).await;
 }
 
 async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
@@ -263,6 +257,7 @@ async fn worker(args: Arg, config: WorkerConfig) -> JoinSet<()> {
             global_sched_controller.clone(),
             updater_controller,
             num_iteration,
+            config.clone(),
         )
         .await;
 
@@ -292,7 +287,7 @@ struct Arg {
 
 use duration_str::deserialize_duration;
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct WorkerConfig {
     num_contractors: usize,
     num_executors: usize,
@@ -377,6 +372,7 @@ async fn save_metrics(
     global_sched_controller: global_sched::Controller,
     mut updater_controller: updater::Controller,
     num_iteration: usize,
+    config: WorkerConfig,
 ) -> (Duration, u64, u64, HashMap<String, f64>) {
     let file = File::create(dir.join("metrics.csv")).unwrap();
     let mut file = BufWriter::new(file);
@@ -395,6 +391,8 @@ async fn save_metrics(
     let mut runtime_sum = HashMap::<String, (u32, u64)>::new();
     //
 
+    let mut last2 = None;
+
     // while let Some(metric) = updater_controller.recv_metric().await {
     while let Some(metric) = tokio::select! {
         metric = updater_controller.recv_metric() => metric,
@@ -409,6 +407,11 @@ async fn save_metrics(
             elapsed,
             consumed,
         } = metric;
+
+        // if count < config.num_cpus {
+        //     count += 1;
+        //     continue;
+        // }
 
         if status == "Finished" {
             finished += 1;
@@ -459,7 +462,18 @@ async fn save_metrics(
         file.flush().unwrap();
 
         count += 1;
-        if count == num_iteration {
+        if num_iteration - config.num_cpus == count {
+            println!(
+                "diff: {}, count: {}",
+                num_iteration - config.num_cpus,
+                count
+            );
+            last2 = Some(end);
+        }
+
+        if num_iteration == count {
+            let diff: Duration = end - last2.unwrap();
+            println!("\n\n\ndiff: {}\n\n\n", diff.as_millis());
             break;
         }
     }
@@ -489,20 +503,17 @@ async fn save_cpu_usage(
     mut stop_notifier: tokio::sync::watch::Receiver<()>,
     freq: Duration,
 ) {
-    let num_use_cpus = 1;
-
     let file_name = dir.join("cpu_usage.csv");
     let file = File::create(&file_name).unwrap();
     let mut writer = BufWriter::new(file);
 
-    writer.write_all(b"timestamp").unwrap();
-    (0..num_use_cpus).for_each(|i| {
-        writer.write_all(format!(",core_{i}").as_bytes()).unwrap();
-    });
-    writer.write_all(b"\n").unwrap();
+    writer.write_all(b"timestamp, usage\n").unwrap();
+    // (0..num_use_cpus).for_each(|i| {
+    //     writer.write_all(format!(",core_{i}").as_bytes()).unwrap();
+    // });
+    // writer.write_all(b"\n").unwrap();
 
     let mut system = sysinfo::System::new_all();
-
     let mut ticker = tokio::time::interval(freq);
     let mut counter = 0u64;
 
@@ -513,18 +524,17 @@ async fn save_cpu_usage(
         }
     } {
         system.refresh_cpu_usage();
-        // let cpu_list = system.cpus();
+        let cpu_list = system.cpus();
         // let mut sum = 0;
 
         writer.write_all(format!("{counter}").as_bytes()).unwrap();
-        for i in 0..num_use_cpus {
-            // let cpu = cpu_list.get(i).unwrap();
-            // let usage = cpu.cpu_usage() as u8;
-            let usage = system.global_cpu_usage() as u8;
-            writer.write_all(format!(",{}", usage).as_bytes()).unwrap();
+        let usage = cpu_list[0..num_use_cpus]
+            .iter()
+            .map(|cpu| cpu.cpu_usage())
+            .sum::<f32>()
+            / num_use_cpus as f32;
 
-            // sum += usage;
-        }
+        writer.write_all(format!(",{usage}").as_bytes()).unwrap();
 
         writer.write_all(b"\n").unwrap();
         writer.flush().unwrap();

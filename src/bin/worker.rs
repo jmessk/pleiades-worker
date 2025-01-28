@@ -1,9 +1,7 @@
 use clap::Parser;
-use core::num;
 use pleiades_worker::scheduler::global_sched;
 use pleiades_worker::updater;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::io::prelude::*;
 use std::{
     fs::File,
@@ -474,7 +472,7 @@ async fn save_metrics(
     println!("start mesurement");
 
     start_notify_sender.send(()).unwrap();
-    let mut measure_timer = tokio::time::interval(Duration::from_secs(300));
+    let mut measure_timer = tokio::time::interval(Duration::from_secs(600));
     measure_timer.tick().await;
     let start_instant = std::time::Instant::now();
 
