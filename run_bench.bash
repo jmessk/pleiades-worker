@@ -1,29 +1,58 @@
 #!/bin/bash
 
-NUM_JOBS=50
-EPOCHS=1
+EPOCHS=3
+DIR=config-12
+NUM_JOBS=200
 
-for item in cooperative-6; do
+# # for item in cooperative-6 cooperative-6-2 cooperative-8 cooperative-8-2; do
+# for item in cooperative-8 cooperative-8-2; do
+#     echo "Running $item"
+
+#     for i in $(seq 1 ${EPOCHS}); do
+#         ssh jme@node1.local "cd /home/jme/workspace/mecrm-server-docker && docker compose down && docker compose up -d"
+        
+#         cargo run --release --example job_generator_co -- -n ${NUM_JOBS}
+#         cargo run --release --bin worker -- --config ./${DIR}/${item}.yml -n 0
+#     done
+# done
+
+# # for item in blocking overloaded-60 overloaded-80 overloaded-100; do
+# for item in overloaded-60 overloaded-80; do
+#     echo "Running $item"
+
+#     for i in $(seq 1 ${EPOCHS}); do
+#         ssh jme@node1.local "cd /home/jme/workspace/mecrm-server-docker && docker compose down && docker compose up -d"
+
+#         cargo run --release --example job_generator_b -- -n ${NUM_JOBS}
+#         cargo run --release --bin worker -- --config ./${DIR}/${item}.yml -n 0
+#     done
+# done
+
+
+EPOCHS=5
+DIR=config-20
+NUM_JOBS=300
+
+# for item in cooperative-6 cooperative-6-2 cooperative-8 cooperative-8-2; do
+for item in cooperative-6-2 cooperative-8 cooperative-8-2; do
     echo "Running $item"
 
     for i in $(seq 1 ${EPOCHS}); do
         ssh jme@node1.local "cd /home/jme/workspace/mecrm-server-docker && docker compose down && docker compose up -d"
         
         cargo run --release --example job_generator_co -- -n ${NUM_JOBS}
-        cargo run --release --bin worker -- --config ./config/$item.yml -n 0
+        cargo run --release --bin worker -- --config ./${DIR}/${item}.yml -n 0
     done
 done
 
-
-
-for item in overloaded-100; do
+for item in blocking overloaded-60 overloaded-80 overloaded-100; do
     echo "Running $item"
 
     for i in $(seq 1 ${EPOCHS}); do
         ssh jme@node1.local "cd /home/jme/workspace/mecrm-server-docker && docker compose down && docker compose up -d"
 
         cargo run --release --example job_generator_b -- -n ${NUM_JOBS}
-        cargo run --release --bin worker -- --config ./config/$item.yml -n 0
+        cargo run --release --bin worker -- --config ./${DIR}/${item}.yml -n 0
     done
 done
 

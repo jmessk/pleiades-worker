@@ -1,0 +1,45 @@
+num_contractors: 16
+num_executors: 20
+num_cpus: 20
+affinity_mode: 2
+policy: cooperative
+exec_deadline:
+  secs: 180
+  nanos: 0
+job_deadline:
+  secs: 30
+  nanos: 0
+cpu_usage_freq:
+  secs: 5
+  nanos: 0
+---
+elapsed: 1059805
+num_jobs: 1149
+finished: 1149
+cancelled: 0
+runtime:
+
+  test6_0-0:
+    num: 193
+    elapsed_avr: 120187.47150259068
+    consumed_avr: 26431.38341968912
+  test5_1-1:
+    num: 188
+    elapsed_avr: 125464.78723404255
+    consumed_avr: 0.010638297872340425
+  test4_1-0:
+    num: 192
+    elapsed_avr: 129435.38020833333
+    consumed_avr: 0.010416666666666666
+  test1_0-0:
+    num: 190
+    elapsed_avr: 68385.8947368421
+    consumed_avr: 22074.352631578946
+  test2_1-0:
+    num: 193
+    elapsed_avr: 70665.73056994818
+    consumed_avr: 22867.80310880829
+  test3_1-1:
+    num: 193
+    elapsed_avr: 72183.0725388601
+    consumed_avr: 22199.99481865285

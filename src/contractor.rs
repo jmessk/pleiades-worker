@@ -134,6 +134,8 @@ impl Contractor {
         request: contract::Request,
         job_deadline: Duration,
     ) {
+
+        println!("contracting");
         tracing::trace!("contracting: worker_id={}", request.worker_id);
         // Fetch a new job
         //
@@ -235,8 +237,6 @@ impl Contractor {
 
         // /////
         //
-        println!("got job");
-
         let splited = job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
             .split("-")
             .collect::<Vec<&str>>();
@@ -254,6 +254,8 @@ impl Contractor {
             .expect("contractor");
 
         tracing::trace!("enqueue job");
+
+        println!("got job");
     }
 }
 

@@ -166,7 +166,7 @@ impl LocalSched {
     }
 
     async fn signal_local_action(&self) {
-        self.action_sender.send(()).unwrap();
+        self.action_sender.send(());
     }
 }
 

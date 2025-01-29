@@ -477,7 +477,7 @@ async fn save_metrics(
     let mut runtime_sum = HashMap::<String, (u32, u64, u64)>::new();
     //
 
-    let mut wormup_timer = tokio::time::interval(Duration::from_secs(10));
+    let mut wormup_timer = tokio::time::interval(Duration::from_secs(180));
     wormup_timer.tick().await;
 
     while let Some(metric) = tokio::select! {
@@ -491,7 +491,7 @@ async fn save_metrics(
     println!("start mesurement");
 
     start_notify_sender.send(()).unwrap();
-    let mut measure_timer = tokio::time::interval(Duration::from_secs(60));
+    let mut measure_timer = tokio::time::interval(Duration::from_secs(900));
     measure_timer.tick().await;
     // let start_instant = std::time::Instant::now();
 

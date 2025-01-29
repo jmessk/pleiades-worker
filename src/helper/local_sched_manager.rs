@@ -28,8 +28,10 @@ impl LocalSchedManager {
         for item in &self.list {
             let id = item.local_sched.id;
             let numm_jobs = item.local_sched.num_jobs();
+            let cpu = item.local_sched.cpu_jobs();
+            let other = item.local_sched.gpu_jobs();
 
-            println!("Local Scheduler {id}: \tnum_jobs: {numm_jobs}",);
+            println!("Local Scheduler {id}: \tnum_jobs: {numm_jobs}, \tcpu: {cpu}, \tother: {other}");
         }
 
         println!();
@@ -80,7 +82,7 @@ impl LocalSchedManager {
         let item = self
             .list
             .iter_mut()
-            .min_by_key(|item| item.local_sched.cpu_job())
+            .min_by_key(|item| item.local_sched.cpu_jobs())
             .unwrap();
 
         &mut item.local_sched
@@ -90,7 +92,7 @@ impl LocalSchedManager {
         let item = self
             .list
             .iter_mut()
-            .min_by_key(|item| item.local_sched.gpu_job())
+            .min_by_key(|item| item.local_sched.gpu_jobs())
             .unwrap();
 
         &mut item.local_sched

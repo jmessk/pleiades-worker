@@ -88,16 +88,16 @@ async fn main() {
         join_set.spawn(invoke_helper(&lambda_2, &blob_blank));
         ticker.tick().await;
 
-        join_set.spawn(invoke_helper(&lambda_3, &blob_blank));
-        ticker.tick().await;
-
         join_set.spawn(invoke_helper(&lambda_4, &blob_blank));
         ticker.tick().await;
 
-        join_set.spawn(invoke_helper(&lambda_5, &blob_blank));
+        join_set.spawn(invoke_helper(&lambda_3, &blob_blank));
         ticker.tick().await;
 
         join_set.spawn(invoke_helper(&lambda_6, &blob_blank));
+        ticker.tick().await;
+
+        join_set.spawn(invoke_helper(&lambda_5, &blob_blank));
         ticker.tick().await;
     }
 

@@ -1,0 +1,21 @@
+num_contractors: 16
+num_executors: 36
+num_cpus: 12
+affinity_mode: 1
+policy: blocking
+exec_deadline:
+  secs: 30
+  nanos: 0
+job_deadline:
+  secs: 30
+  nanos: 0
+cpu_usage_freq:
+  secs: 5
+  nanos: 0
+---
+elapsed: 285002
+num_jobs: 360
+finished: 360
+cancelled: 0
+runtime_avr:
+  pleiades+example: 28166.405555555557

@@ -266,7 +266,7 @@ impl GlobalSched {
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Contracted { job, groupe } => {
-                    self.local_sched_manager.view();
+                    // self.local_sched_manager.view();
                     // let local_sched = self.local_sched_manager.shortest();
                     // edit
                     match groupe.as_str() {
