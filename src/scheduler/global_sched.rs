@@ -173,20 +173,6 @@ impl GlobalSched {
             //
             // /////
 
-            // edit
-            // //
-            // let i = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-            // let groupe = match i % 2 {
-            //     0 => "cpu".to_string(),
-            //     1 => "gpu".to_string(),
-            //     _ => "default".to_string(),
-            // };
-            // let (worker_id, job_deadline) = self.worker_id_manager.get(&groupe).unwrap();
-
-            // COUNTER.store(i % 2, std::sync::atomic::Ordering::SeqCst);
-            //
-            // /////
 
             self.add_contracting(job_deadline);
             self.schedule_contract(&groupe, &worker_id).await;

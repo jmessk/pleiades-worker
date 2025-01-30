@@ -1,0 +1,8 @@
+num_contractors: 16
+num_executors: 20
+num_cpus: 20
+affinity_mode: 1
+policy: blocking
+exec_deadline: 30s
+job_deadline: 30s
+cpu_usage_freq: 5s

@@ -237,11 +237,13 @@ impl Contractor {
 
         // /////
         //
+
         let splited = job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
             .split("-")
             .collect::<Vec<&str>>();
         let sleep_time = splited[0].parse::<u64>().unwrap();
         tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+        
         //
         // /////
 

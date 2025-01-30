@@ -1,0 +1,25 @@
+num_contractors: 16
+num_executors: 20
+num_cpus: 20
+affinity_mode: 1
+policy: cooperative
+exec_deadline:
+  secs: 180
+  nanos: 0
+job_deadline:
+  secs: 30
+  nanos: 0
+cpu_usage_freq:
+  secs: 5
+  nanos: 0
+---
+elapsed: 1016817
+num_jobs: 913
+finished: 913
+cancelled: 0
+runtime:
+
+  pleiades+example:
+    num: 913
+    elapsed_avr: 118211.31325301205
+    consumed_avr: 19733.969331872948
