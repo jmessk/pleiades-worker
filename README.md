@@ -2,6 +2,11 @@
 
 本リポジトリは、卒業研究で作成したサーバレスシステムの Worker ノードです。
 
+## 
+
+- **client library**: [pleiades-api](https://github.com/jmessk/pleiades-rs)
+- **resource manager**: [pleiades-core](https://git.short-circuits.org/pleiades/pleiades-core)
+
 ## Config
 
 ### Simple Job Generator
