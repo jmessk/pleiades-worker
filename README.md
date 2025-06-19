@@ -1,6 +1,6 @@
 # Pleiades Worker
 
-本リポジトリは、卒業研究で作成したサーバレスシステムの Worker ノードです。
+The Pleiades Worker is a serverless system's worker node created for graduation research.
 
 ## Dependency
 
@@ -10,6 +10,14 @@
 ## Architecture
 
 ![worker-components](docs/worker-components.svg)
+
+Components communicate with each other as shown in the figure below.
+When a component is created, it generates both the component itself (Component), which handles business logic, and a Controller, which is an interface for accessing other components and implements many methods.
+
+In the current implementation, the lifetime of a Component is the same as that of its Controller.
+This mechanism utilizes Rust's ownership system, making dependencies explicit and allowing for explicit control of component lifetimes during shutdown and other operations.
+
+![actor-model](docs/actor-model.svg)
 
 ## Config
 
