@@ -67,8 +67,9 @@ impl Runtime for JsRuntime {
             .ok_or_else(|| anyhow::anyhow!("No context found"))?;
 
         match context.step() {
-            Some(request) => Ok(JobStatus::Pending(request)),
-            None => Ok(JobStatus::Finished(context.get_output())),
+            Ok(Some(request)) => Ok(JobStatus::Pending(request)),
+            Ok(None) => Ok(JobStatus::Finished(context.get_output())),
+            Err(_) => Ok(JobStatus::Cancelled),
         }
     }
 

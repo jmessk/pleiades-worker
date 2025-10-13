@@ -50,3 +50,16 @@ impl HostDefined for RuntimeResponse {
     //     realm.host_defined().get::<Self>().cloned()
     // }
 }
+
+// Runtime Error
+#[derive(Debug, PartialEq, Eq)]
+pub struct RuntimeError {
+    pub message: String,
+}
+
+impl JsData for RuntimeError {}
+impl Finalize for RuntimeError {}
+unsafe impl Trace for RuntimeError {
+    empty_trace!();
+}
+impl HostDefined for RuntimeError {}

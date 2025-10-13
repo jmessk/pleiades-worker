@@ -126,105 +126,105 @@ impl Updater {
         tracing::info!("shutdown");
     }
 
-    /// task
-    ///
-    async fn _task_update_job(
-        client: Arc<pleiades_api::Client>,
-        data_manager_controller: data_manager::Controller,
-        request: update::Request,
-    ) {
-        match request.job.status {
-            JobStatus::Finished(output) => {
-                let output = output.unwrap_or(bytes::Bytes::new());
+    // /// task
+    // ///
+    // async fn _task_update_job(
+    //     client: Arc<pleiades_api::Client>,
+    //     data_manager_controller: data_manager::Controller,
+    //     request: update::Request,
+    // ) {
+    //     match request.job.status {
+    //         JobStatus::Finished(output) => {
+    //             let output = output.unwrap_or(bytes::Bytes::new());
 
-                let post_handle = data_manager_controller.post_blob(output).await;
-                let post_response = post_handle.recv().await;
+    //             let post_handle = data_manager_controller.post_blob(output).await;
+    //             let post_response = post_handle.recv().await;
 
-                let update_request = pleiades_api::api::job::update::Request::builder()
-                    .job_id(request.job.id)
-                    .data_id(post_response.blob.id)
-                    .status("finished")
-                    .build();
+    //             let update_request = pleiades_api::api::job::update::Request::builder()
+    //                 .job_id(request.job.id)
+    //                 .data_id(post_response.blob.id)
+    //                 .status("finished")
+    //                 .build();
 
-                let _update_response = client
-                    .call_api(&update_request)
-                    .await
-                    .expect("no error handling: update");
+    //             let _update_response = client
+    //                 .call_api(&update_request)
+    //                 .await
+    //                 .expect("no error handling: update");
 
-                tracing::debug!("updated finished job");
-            }
-            JobStatus::Cancelled => {
-                let update_request = pleiades_api::api::job::update::Request::builder()
-                    .job_id(request.job.id)
-                    .data_id("0")
-                    .status("cancelled")
-                    .build();
+    //             tracing::debug!("updated finished job");
+    //         }
+    //         JobStatus::Cancelled => {
+    //             let update_request = pleiades_api::api::job::update::Request::builder()
+    //                 .job_id(request.job.id)
+    //                 .data_id("0")
+    //                 .status("cancelled")
+    //                 .build();
 
-                let _update_response = client
-                    .call_api(&update_request)
-                    .await
-                    .expect("no error handling: update");
+    //             let _update_response = client
+    //                 .call_api(&update_request)
+    //                 .await
+    //                 .expect("no error handling: update");
 
-                tracing::debug!("updated cancelled job");
-            }
-            _ => {}
-        };
-    }
+    //             tracing::debug!("updated cancelled job");
+    //         }
+    //         _ => {}
+    //     };
+    // }
 
     async fn task_update_job_metrics(
-        client: Arc<pleiades_api::Client>,
-        data_manager_controller: data_manager::Controller,
+        _client: Arc<pleiades_api::Client>,
+        _data_manager_controller: data_manager::Controller,
         request: update::Request,
     ) -> Metric {
         //
-        let splited = request.job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
-            .split("-")
-            .collect::<Vec<&str>>();
-        let sleep_time = splited[1].parse::<u64>().unwrap();
-        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+        // let splited = request.job.lambda.runtime.split('_').collect::<Vec<&str>>()[1]
+        //     .split("-")
+        //     .collect::<Vec<&str>>();
+        // let sleep_time = splited[1].parse::<u64>().unwrap();
+        // tokio::time::sleep(Duration::from_secs(sleep_time)).await;
         //
 
         match request.job.status {
-            JobStatus::Finished(output) => {
-                let output = output.unwrap_or_else(bytes::Bytes::new);
+            JobStatus::Finished(_output) => {
+                // let output = output.unwrap_or_else(bytes::Bytes::new);
 
-                let post_handle = data_manager_controller.post_blob(output).await;
-                let post_response = post_handle.recv().await;
+                // let post_handle = data_manager_controller.post_blob(output).await;
+                // let post_response = post_handle.recv().await;
 
-                let update_request = pleiades_api::api::job::update::Request::builder()
-                    .job_id(&request.job.id)
-                    .data_id(post_response.blob.id)
-                    .status("finished")
-                    .build();
+                // let update_request = pleiades_api::api::job::update::Request::builder()
+                //     .job_id(&request.job.id)
+                //     .data_id(post_response.blob.id)
+                //     .status("finished")
+                //     .build();
 
-                let _update_response = client
-                    .call_api(&update_request)
-                    .await
-                    .expect("no error handling: update");
+                // let _update_response = client
+                //     .call_api(&update_request)
+                //     .await
+                //     .expect("no error handling: update");
 
                 tracing::debug!("updated finished job");
 
                 Metric {
                     id: request.job.id,
-                    runtime: request.job.lambda.runtime,
+                    // runtime: request.job.lambda.runtime,
                     status: "Finished".to_string(),
                     start: request.job.contracted_at,
                     end: Instant::now(),
                     elapsed: request.job.contracted_at.elapsed(),
-                    consumed: request.job.consumed,
+                    consumed_cpu: request.job.consumed,
                 }
             }
             JobStatus::Cancelled => {
-                let update_request = pleiades_api::api::job::update::Request::builder()
-                    .job_id(&request.job.id)
-                    .data_id("0")
-                    .status("cancelled")
-                    .build();
+                // let update_request = pleiades_api::api::job::update::Request::builder()
+                //     .job_id(&request.job.id)
+                //     .data_id("0")
+                //     .status("cancelled")
+                //     .build();
 
-                let _update_response = client
-                    .call_api(&update_request)
-                    .await
-                    .expect("no error handling: update");
+                // let _update_response = client
+                //     .call_api(&update_request)
+                //     .await
+                //     .expect("no error handling: update");
 
                 tracing::debug!("updated cancelled job");
 
@@ -237,12 +237,12 @@ impl Updater {
                 // )
                 Metric {
                     id: request.job.id,
-                    runtime: request.job.lambda.runtime,
+                    // runtime: request.job.lambda.runtime,
                     status: "Cancelled".to_string(),
                     start: request.job.contracted_at,
                     end: Instant::now(),
                     elapsed: request.job.contracted_at.elapsed(),
-                    consumed: request.job.consumed,
+                    consumed_cpu: request.job.consumed,
                 }
             }
             _ => unreachable!(),

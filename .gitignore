@@ -1,5 +1,7 @@
 /target
 /metrics
-.env
 /assets/*
 /cpu_usage
+
+.env
+.DS_Store

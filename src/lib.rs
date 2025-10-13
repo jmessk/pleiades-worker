@@ -10,6 +10,7 @@ pub mod runtime;
 pub mod scheduler;
 pub mod updater;
 pub mod metric;
+pub mod config;
 
 pub use contractor::Contractor;
 pub use data_manager::DataManager;
@@ -18,3 +19,4 @@ pub use helper::WorkerIdManager;
 pub use pending_manager::PendingManager;
 pub use scheduler::{GlobalSched, LocalSched};
 pub use updater::Updater;
+pub use config::WorkerConfig;

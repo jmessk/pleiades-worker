@@ -9,12 +9,12 @@ boa_engine = "0.20"
 boa_gc = "0.20"
 boa_runtime = "0.20"
 bytes = "1.8"
-pleiades-api = { git = "https://git.dolylab.cc/mec/pleiades-rs.git", branch = "dev" }
-pleiades = { git = "https://git.dolylab.cc/mec/pleiades-rs.git", branch = "dev" }
+pleiades-api = { git = "https://github.com/jmessk/pleiades-rs.git", rev = "9b79eaee8c36bf45f33640c807ea612d4ce122aa" }
+pleiades = { git = "https://github.com/jmessk/pleiades-rs.git", rev = "9b79eaee8c36bf45f33640c807ea612d4ce122aa" }
 tokio = { version = "1.0", features = ["full"] }
 pollster = "0.4.0"
 cpu-time = "1.0.0"
-reqwest = "0.12.9"
+reqwest = { version = "0.12.9", features = ["blocking"] }
 tracing = "0.1.41"
 dotenvy = "0.15.7"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
@@ -37,5 +37,5 @@ thread-priority = "1.2.0"
 [dev-dependencies]
 criterion = "0.5.1"
 
-[build]
-rustflags = ["--cfg", "tokio_unstable"]
+# [build]
+# rustflags = ["--cfg", "tokio_unstable"]

@@ -5,6 +5,7 @@ use bytes::Bytes;
 use std::rc::Rc;
 
 use crate::runtime;
+use crate::runtime::javascript::host_defined::RuntimeError;
 use crate::runtime::javascript::{
     host_defined::{HostDefined as _, UserInput, UserOutput},
     job_queue, module,
@@ -88,6 +89,15 @@ impl JsContext {
             )
             .unwrap();
 
+        // setError
+        context
+            .register_global_builtin_callable(
+                js_string!("setError"),
+                1,
+                NativeFunction::from_fn_ptr(function::set_error),
+            )
+            .unwrap();
+
         // sleep
         context
             .register_global_builtin_callable(
@@ -113,45 +123,45 @@ impl JsContext {
             )
             .unwrap();
 
-        context
-            .register_global_builtin_callable(
-                js_string!("compress"),
-                1,
-                NativeFunction::from_fn_ptr(function::compress),
-            )
-            .unwrap();
+        // context
+        //     .register_global_builtin_callable(
+        //         js_string!("compress"),
+        //         1,
+        //         NativeFunction::from_fn_ptr(function::compress),
+        //     )
+        //     .unwrap();
 
-        context
-            .register_global_builtin_callable(
-                js_string!("resize"),
-                1,
-                NativeFunction::from_fn_ptr(function::resize),
-            )
-            .unwrap();
+        // context
+        //     .register_global_builtin_callable(
+        //         js_string!("resize"),
+        //         1,
+        //         NativeFunction::from_fn_ptr(function::resize),
+        //     )
+        //     .unwrap();
 
-        context
-            .register_global_builtin_callable(
-                js_string!("busy"),
-                1,
-                NativeFunction::from_fn_ptr(function::busy),
-            )
-            .unwrap();
+        // context
+        //     .register_global_builtin_callable(
+        //         js_string!("busy"),
+        //         1,
+        //         NativeFunction::from_fn_ptr(function::busy),
+        //     )
+        //     .unwrap();
 
-        context
-            .register_global_builtin_callable(
-                js_string!("count"),
-                1,
-                NativeFunction::from_fn_ptr(function::count),
-            )
-            .unwrap();
+        // context
+        //     .register_global_builtin_callable(
+        //         js_string!("count"),
+        //         1,
+        //         NativeFunction::from_fn_ptr(function::count),
+        //     )
+        //     .unwrap();
 
-        context
-            .register_global_builtin_callable(
-                js_string!("fib"),
-                1,
-                NativeFunction::from_fn_ptr(function::fib),
-            )
-            .unwrap();
+        // context
+        //     .register_global_builtin_callable(
+        //         js_string!("fib"),
+        //         1,
+        //         NativeFunction::from_fn_ptr(function::fib),
+        //     )
+        //     .unwrap();
     }
 
     fn register_builtin_modules(context: &mut Context) {
@@ -201,6 +211,7 @@ impl JsContext {
     }
 
     fn register_entrypoint(&mut self) {
+        // try をなくせば console が表示される。
         let entry_point = r#"
             import fetch from "user";
 
@@ -208,7 +219,8 @@ impl JsContext {
                 let input = getUserInput();
                 setUserOutput(await fetch(input));
             } catch (e) {
-                console.error(e);
+                // console.error(e);
+                setError(e);
             }
         "#;
 
@@ -218,9 +230,14 @@ impl JsContext {
         let _ = module.load_link_evaluate(&mut self.context);
     }
 
-    pub fn step(&mut self) -> Option<RuntimeRequest> {
+    pub fn step(&mut self) -> Result<Option<RuntimeRequest>, RuntimeError> {
         self.context.job_queue().run_jobs(&mut self.context);
-        RuntimeRequest::extract(self.context.realm())
+
+        if let Some(err) = RuntimeError::extract(self.context.realm()) {
+            return Err(err);
+        }
+
+        Ok(RuntimeRequest::extract(self.context.realm()))
     }
 
     pub fn set_response(&mut self, response: RuntimeResponse) {

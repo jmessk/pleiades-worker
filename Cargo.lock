@@ -2513,7 +2513,7 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 [[package]]
 name = "pleiades"
 version = "0.1.0"
-source = "git+https://git.dolylab.cc/mec/pleiades-rs.git?branch=dev#9b79eaee8c36bf45f33640c807ea612d4ce122aa"
+source = "git+https://github.com/jmessk/pleiades-rs.git?rev=9b79eaee8c36bf45f33640c807ea612d4ce122aa#9b79eaee8c36bf45f33640c807ea612d4ce122aa"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2526,7 +2526,7 @@ dependencies = [
 [[package]]
 name = "pleiades-api"
 version = "0.1.0"
-source = "git+https://git.dolylab.cc/mec/pleiades-rs.git?branch=dev#9b79eaee8c36bf45f33640c807ea612d4ce122aa"
+source = "git+https://github.com/jmessk/pleiades-rs.git?rev=9b79eaee8c36bf45f33640c807ea612d4ce122aa#9b79eaee8c36bf45f33640c807ea612d4ce122aa"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2939,6 +2939,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2",

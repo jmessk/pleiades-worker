@@ -1,0 +1,12 @@
+num_executors: 16
+num_executor_cores: 16
+num_general_cores: 4
+
+affinity_mode: fixed
+policy: cooperative
+
+cpu_usage_freq: 1s
+warmup_time: 3s
+measure_time: 3s
+
+script_path: ./scripts/cpu1.js

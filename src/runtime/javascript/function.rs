@@ -1,17 +1,15 @@
-use std::{
-    io::{Read as _, Write as _}, result, time::Duration
-};
+use std::time::Duration;
 
 use boa_engine::{
     job::NativeJob,
     object::builtins::{JsPromise, JsUint8Array},
     value::Type,
-    Context, JsObject, JsResult, JsValue,
+    Context, JsResult, JsValue,
 };
-use bytes::Bytes;
+// use bytes::Bytes;
 
 use crate::runtime::{
-    javascript::host_defined::{HostDefined, UserInput, UserOutput},
+    javascript::host_defined::{HostDefined, RuntimeError, UserInput, UserOutput},
     RuntimeRequest,
 };
 
@@ -156,137 +154,151 @@ pub fn yield_now(_this: &JsValue, _args: &[JsValue], context: &mut Context) -> J
     Ok(JsValue::from(promise))
 }
 
-pub fn compress(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let input_obj = args.first().unwrap().to_object(context).unwrap();
+// pub fn compress(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+//     let input_obj = args.first().unwrap().to_object(context).unwrap();
 
-    let data = input_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
+//     let data = input_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
 
-    // let start = std::time::Instant::now();
-    // let data = JsUint8Array::from_object(input_obj)?
-    //     .iter(context)
-    //     .collect::<Bytes>();
-    // let finished = start.elapsed();
-    // println!("compress");
-    // println!("data collection finished: {:?}", finished);
+//     // let start = std::time::Instant::now();
+//     // let data = JsUint8Array::from_object(input_obj)?
+//     //     .iter(context)
+//     //     .collect::<Bytes>();
+//     // let finished = start.elapsed();
+//     // println!("compress");
+//     // println!("data collection finished: {:?}", finished);
 
-    // let data = UserInput::extract(context.realm()).unwrap().data;
+//     // let data = UserInput::extract(context.realm()).unwrap().data;
 
-    use flate2::write::ZlibEncoder;
-    use flate2::Compression;
-    let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
+//     use flate2::write::ZlibEncoder;
+//     use flate2::Compression;
+//     let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
 
-    e.write_all(&data).unwrap();
-    let compressed = e.finish().unwrap();
-    // let array = JsUint8Array::from_iter(compressed, context)?;
-    let output = ByteData {
-        inner: compressed.into(),
-    };
-    Ok(JsValue::from(JsObject::from_proto_and_data(None, output)))
-    // UserOutput {
-    //     data: Some(compressed.into()),
-    // }
-    // .insert(context.realm());
+//     e.write_all(&data).unwrap();
+//     let compressed = e.finish().unwrap();
+//     // let array = JsUint8Array::from_iter(compressed, context)?;
+//     let output = ByteData {
+//         inner: compressed.into(),
+//     };
+//     Ok(JsValue::from(JsObject::from_proto_and_data(None, output)))
+//     // UserOutput {
+//     //     data: Some(compressed.into()),
+//     // }
+//     // .insert(context.realm());
 
-    // Ok(JsValue::undefined())
-}
+//     // Ok(JsValue::undefined())
+// }
 
-pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let input_obj = args.first().unwrap().to_object(context).unwrap();
-    // let data = JsUint8Array::from_object(input_obj)?
-    //     .iter(context)
-    //     .collect::<Bytes>();
-    let data = input_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
+// pub fn resize(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+//     let input_obj = args.first().unwrap().to_object(context).unwrap();
+//     // let data = JsUint8Array::from_object(input_obj)?
+//     //     .iter(context)
+//     //     .collect::<Bytes>();
+//     let data = input_obj.downcast_ref::<ByteData>().unwrap().inner.clone();
 
-    // let data = UserInput::extract(context.realm()).unwrap().data;
+//     // let data = UserInput::extract(context.realm()).unwrap().data;
 
-    // create zip::ZipArchive from data
-    let mut input_zip = zip::ZipArchive::new(std::io::Cursor::new(data)).unwrap();
-    let mut output_zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated)
-        .unix_permissions(0o755);
+//     // create zip::ZipArchive from data
+//     let mut input_zip = zip::ZipArchive::new(std::io::Cursor::new(data)).unwrap();
+//     let mut output_zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+//     let options = zip::write::SimpleFileOptions::default()
+//         .compression_method(zip::CompressionMethod::Deflated)
+//         .unix_permissions(0o755);
 
-    for i in 0..input_zip.len() {
-        let mut file = input_zip.by_index(i).unwrap();
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents).unwrap();
-        let image = image::load_from_memory(&contents).unwrap();
-        let resized = image.resize(640, 360, image::imageops::FilterType::Gaussian);
+//     for i in 0..input_zip.len() {
+//         let mut file = input_zip.by_index(i).unwrap();
+//         let mut contents = Vec::new();
+//         file.read_to_end(&mut contents).unwrap();
+//         let image = image::load_from_memory(&contents).unwrap();
+//         let resized = image.resize(640, 360, image::imageops::FilterType::Gaussian);
 
-        output_zip
-            .start_file(format!("image_{i}.jpg"), options)
-            .unwrap();
-        output_zip.write_all(resized.as_bytes()).unwrap();
-    }
+//         output_zip
+//             .start_file(format!("image_{i}.jpg"), options)
+//             .unwrap();
+//         output_zip.write_all(resized.as_bytes()).unwrap();
+//     }
 
-    let output = output_zip.finish().unwrap().into_inner();
-    // let array = JsUint8Array::from_iter(output.into_iter(), context)?;
-    let output = ByteData {
-        inner: output.into(),
-    };
+//     let output = output_zip.finish().unwrap().into_inner();
+//     // let array = JsUint8Array::from_iter(output.into_iter(), context)?;
+//     let output = ByteData {
+//         inner: output.into(),
+//     };
 
-    Ok(JsValue::from(JsObject::from_proto_and_data(None, output)))
-    // UserOutput {
-    //     data: Some(output.into()),
-    // }
-    // .insert(context.realm());
+//     Ok(JsValue::from(JsObject::from_proto_and_data(None, output)))
+//     // UserOutput {
+//     //     data: Some(output.into()),
+//     // }
+//     // .insert(context.realm());
 
-    // Ok(JsValue::undefined())
-}
+//     // Ok(JsValue::undefined())
+// }
 
-pub fn busy(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ms = match args.first() {
-        Some(ms) => ms.to_number(context)? as u128,
-        None => 0,
-    };
+// pub fn busy(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+//     let ms = match args.first() {
+//         Some(ms) => ms.to_number(context)? as u128,
+//         None => 0,
+//     };
 
-    let mut count = 0u64;
+//     let mut count = 0u64;
 
-    // let start = std::time::Instant::now();
-    let start = cpu_time::ThreadTime::now();
-    while start.elapsed().as_millis() < ms {
-        for _ in 0..1000 {
-            count += 1;
-        }
-    }
+//     // let start = std::time::Instant::now();
+//     let start = cpu_time::ThreadTime::now();
+//     while start.elapsed().as_millis() < ms {
+//         for _ in 0..1000 {
+//             count += 1;
+//         }
+//     }
 
-    Ok(JsValue::from(count))
-}
+//     Ok(JsValue::from(count))
+// }
 
-pub fn count(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let max = match args.first() {
-        Some(max) => max.to_number(context)? as u64,
-        None => 0,
-    };
+// pub fn count(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+//     let max = match args.first() {
+//         Some(max) => max.to_number(context)? as u64,
+//         None => 0,
+//     };
 
-    let mut count = 0u64;
+//     let mut count = 0u64;
 
-    for _ in 0..max {
-        count += 1;
-    }
+//     for _ in 0..max {
+//         count += 1;
+//     }
 
-    println!("count: {}", count);
+//     println!("count: {}", count);
 
-    Ok(JsValue::from(count))
-}
+//     Ok(JsValue::from(count))
+// }
 
-pub fn fib(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    fn fib(n: u64) -> u64 {
-        match n {
-            0 => 0,
-            1 => 1,
-            _ => fib(n - 1) + fib(n - 2),
-        }
-    }
+// pub fn fib(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+//     fn fib(n: u64) -> u64 {
+//         match n {
+//             0 => 0,
+//             1 => 1,
+//             _ => fib(n - 1) + fib(n - 2),
+//         }
+//     }
 
-    let i = match args.first() {
-        Some(max) => max.to_number(context)? as u64,
-        None => 0,
-    };
+//     let i = match args.first() {
+//         Some(max) => max.to_number(context)? as u64,
+//         None => 0,
+//     };
 
-    let result = fib(i);
+//     let result = fib(i);
 
-    println!("count: {}", result);
+//     println!("count: {}", result);
 
-    Ok(JsValue::from(result))
+//     Ok(JsValue::from(result))
+// }
+
+pub fn set_error(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let data_js_obj = args.first().expect("error is required");
+
+    let message = data_js_obj
+        .to_string(context)
+        .unwrap()
+        .to_std_string_escaped();
+
+    // UserOutput { data }.insert(context.realm());
+    RuntimeError { message }.insert(context.realm());
+
+    Ok(JsValue::undefined())
 }
