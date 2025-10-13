@@ -1,5 +1,5 @@
 pub mod component;
-pub mod contractor;
+// pub mod contractor;
 pub mod data_manager;
 pub mod executor;
 pub mod fetcher;
@@ -12,7 +12,7 @@ pub mod updater;
 pub mod metric;
 pub mod config;
 
-pub use contractor::Contractor;
+// pub use contractor::Contractor;
 pub use data_manager::DataManager;
 pub use fetcher::Fetcher;
 pub use helper::WorkerIdManager;

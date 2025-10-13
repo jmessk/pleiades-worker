@@ -10,14 +10,14 @@ use crate::runtime::{RuntimeContext, RuntimeRequest, RuntimeResponse};
 ///
 #[derive(Debug, PartialEq, Eq)]
 pub struct Blob {
-    pub id: String,
+    // pub id: String,
     pub data: Bytes,
 }
 
 impl Default for Blob {
     fn default() -> Self {
         Self {
-            id: "default".into(),
+            // id: "default".into(),
             data: "default".into(),
         }
     }
@@ -28,21 +28,11 @@ impl Default for Blob {
 ///
 ///
 ///
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct Lambda {
-    pub id: String,
-    pub runtime: String,
+    // pub id: String,
+    // pub runtime: String,
     pub code: Blob,
-}
-
-impl Default for Lambda {
-    fn default() -> Self {
-        Self {
-            id: "default".into(),
-            runtime: "default".into(),
-            code: Blob::default(),
-        }
-    }
 }
 
 /// Job
@@ -60,8 +50,8 @@ pub struct Job {
     pub context: Option<RuntimeContext>,
 
     pub id: String,
-    pub lambda: Box<Lambda>,
-    pub input: Box<Blob>,
+    pub lambda: Lambda,
+    pub input: Blob,
 }
 
 impl Default for Job {
@@ -73,8 +63,8 @@ impl Default for Job {
             context: None,
 
             id: "default".into(),
-            lambda: Box::new(Lambda::default()),
-            input: Box::new(Blob::default()),
+            lambda: Lambda::default(),
+            input: Blob::default(),
 
             contracted_at: Instant::now(),
         }

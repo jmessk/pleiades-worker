@@ -2,7 +2,7 @@ use boa_engine::{
     class::{Class, ClassBuilder},
     job::NativeJob,
     js_string,
-    object::builtins::{JsPromise, JsUint8Array},
+    object::builtins::JsPromise,
     Context, JsData, JsObject, JsResult, JsValue, NativeFunction,
 };
 use boa_gc::{empty_trace, Finalize, Trace};
@@ -107,11 +107,12 @@ impl Blob {
             let response = RuntimeResponse::extract(context.realm());
 
             let result = match response {
-                Some(RuntimeResponse::Blob(blob::Response::Post(blob))) => {
-                    tracing::trace!("response found: blob ID: {}", blob.id);
-                    // let array = JsUint8Array::from_iter(body, context)?;
-                    // JsValue::from(array)
-                    JsValue::from(js_string!(blob.id))
+                Some(RuntimeResponse::Blob(blob::Response::Post(_blob))) => {
+                    // tracing::trace!("response found: blob ID: {}", blob.id);
+                    // // let array = JsUint8Array::from_iter(body, context)?;
+                    // // JsValue::from(array)
+                    // JsValue::from(js_string!(blob.id))
+                    JsValue::undefined()
                 }
                 _ => {
                     tracing::trace!("response not found");

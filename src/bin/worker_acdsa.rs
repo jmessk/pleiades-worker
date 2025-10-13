@@ -217,6 +217,8 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
     //
     // /////
 
+    // tokio::time::sleep(Duration::from_secs(10)).await;
+
     // Initialize LocalSched and Executor
     //
     let mut local_sched_manager_builder = LocalSchedManager::builder();
@@ -358,7 +360,7 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
 async fn save_summary(
     dir: PathBuf,
     config: WorkerConfig,
-    (elapsed, finished, cancelled): (Duration, u64, u64),
+    (elapsed, finished, cancelled, max_rps): (Duration, u64, u64, u32),
 ) {
     let file = File::create(dir.join("summary.yml")).unwrap();
     let mut writer = BufWriter::new(file);
@@ -374,6 +376,7 @@ elapsed: {elapsed}
 num_jobs: {sum}
 finished: {finished}
 cancelled: {cancelled}
+max_rps: {max_rps}
 ",
                 elapsed = elapsed.as_millis(),
                 sum = finished + cancelled,
@@ -420,18 +423,26 @@ async fn save_request_metrics(
     mut updater_controller: updater::Controller,
     start_notify_sender: tokio::sync::watch::Sender<()>,
     stop_notify_sender: tokio::sync::watch::Sender<()>,
-) -> (Duration, u64, u64) {
-    let file = File::create(dir.join("metrics.csv")).unwrap();
-    let mut file = BufWriter::new(file);
-
-    file.write_all(b"id,timestamp(us),status,elapsed(us),consumed_cpu(us)\n")
+) -> (Duration, u64, u64, u32) {
+    let request_metrics = File::create(dir.join("request_metrics.csv")).unwrap();
+    let mut request_metrics = BufWriter::new(request_metrics);
+    request_metrics
+        .write_all(b"id,timestamp(us),status,elapsed(us),consumed_cpu(us)\n")
         .unwrap();
+
+    let rps_metrics = File::create(dir.join("rps.csv")).unwrap();
+    let mut rps_metrics = BufWriter::new(rps_metrics);
+    rps_metrics.write_all(b"timestamp(s),rps\n").unwrap();
 
     let mut first_instant = None;
     let mut last_instant = None;
     // let mut count = 0;
     let mut finished = 0;
     let mut canceled = 0;
+
+    let mut current_instant = Instant::now();
+    let mut current_rps = 0;
+    let mut max_rps = 0;
 
     //
     // let mut each_sum = [0u64; 6];
@@ -451,7 +462,7 @@ async fn save_request_metrics(
                 global_sched_controller.signal_shutdown_req().await;
                 stop_notify_sender.send(()).unwrap();
 
-                return (Duration::ZERO, 0, 0);
+                return (Duration::ZERO, 0, 0, 0);
             }
             _ => unreachable!(),
         }
@@ -505,6 +516,24 @@ async fn save_request_metrics(
             }
         }
 
+        current_rps += 1;
+        if 1 <= current_instant.elapsed().as_secs() {
+            if max_rps < current_rps {
+                max_rps = current_rps;
+            }
+            current_instant = Instant::now();
+            rps_metrics
+                .write_all(
+                    format!(
+                        "{timestamp},{current_rps}\n",
+                        timestamp = (current_instant - start_measurement).as_secs(),
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+            current_rps = 0;
+        }
+
         //
         // let runt = runtime.split('_').collect::<Vec<&str>>()[0];
         // let index = runt.chars().last().unwrap().to_digit(10).unwrap() as usize - 1;
@@ -520,25 +549,27 @@ async fn save_request_metrics(
         //     .or_insert((1, elapsed.as_millis() as u64, consumed.as_millis() as u64));
         //
 
-        file.write_all(
-            format!(
-                "{id},{timestamp},{status},{elapsed},{consumed_cpu}\n",
-                timestamp = (end - start_measurement).as_micros(),
-                elapsed = elapsed.as_micros(),
-                consumed_cpu = consumed_cpu.as_micros(),
+        request_metrics
+            .write_all(
+                format!(
+                    "{id},{timestamp},{status},{elapsed},{consumed_cpu}\n",
+                    timestamp = (end - start_measurement).as_micros(),
+                    elapsed = elapsed.as_micros(),
+                    consumed_cpu = consumed_cpu.as_micros(),
+                )
+                .as_bytes(),
             )
-            .as_bytes(),
-        )
-        .unwrap();
+            .unwrap();
 
         count += 1;
-        if count == 100 {
+        if 100 <= count {
             count = 0;
-            file.flush().unwrap();
+            request_metrics.flush().unwrap();
+            rps_metrics.flush().unwrap();
         }
     }
 
-    file.flush().unwrap();
+    request_metrics.flush().unwrap();
 
     stop_notify_sender.send(()).unwrap();
     global_sched_controller.signal_shutdown_req().await;
@@ -548,8 +579,8 @@ async fn save_request_metrics(
         .unwrap_or(Duration::ZERO);
 
     (
-        elapsed, finished,
-        canceled,
+        elapsed, finished, canceled,
+        max_rps,
         // runtime_elapsed_avr,
         // runtime_consumed_avr,
         // runtime_sum,
@@ -568,7 +599,7 @@ async fn save_system_metrics(
     let mut writer = BufWriter::new(file);
 
     writer
-        .write_all(b"timestamp(s),cpu_usage,memory(bytes),context_switch\n")
+        .write_all(b"timestamp(s),cpu_usage(%),memory(bytes),context_switch\n")
         .unwrap();
 
     let mut counter = 0;
@@ -628,12 +659,12 @@ async fn save_system_metrics(
 
         let timestamp = counter * freq.as_secs();
         writer
-            .write_all(format!("{timestamp},{cpu_usage}\n").as_bytes())
+            .write_all(format!("{timestamp},{cpu_usage}\n", cpu_usage = cpu_usage as u8).as_bytes())
             .unwrap();
         // writer.write_all(b"\n").unwrap();
 
         counter += 1;
-        if counter == 100 {
+        if counter == 500 {
             counter = 0;
             writer.flush().unwrap();
         }

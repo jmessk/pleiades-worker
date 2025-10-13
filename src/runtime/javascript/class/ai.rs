@@ -1,17 +1,17 @@
-use std::{time::Duration};
+use std::time::Duration;
 
 use boa_engine::{
     class::{Class, ClassBuilder},
     job::NativeJob,
     js_string,
     object::builtins::JsPromise,
-    Context, JsData, JsObject, JsResult, JsValue, NativeFunction,
+    Context, JsData, JsResult, JsValue, NativeFunction,
 };
 use boa_gc::{empty_trace, Finalize, Trace};
 
 use crate::runtime::{
     javascript::{class::ByteData, host_defined::HostDefined as _},
-    RuntimeRequest, RuntimeResponse,
+    RuntimeRequest,
 };
 
 #[derive(Debug, Finalize, JsData)]
@@ -45,11 +45,7 @@ impl Class for Ai {
 }
 
 impl Ai {
-    pub fn infer(
-        _this: &JsValue,
-        args: &[JsValue],
-        context: &mut Context,
-    ) -> JsResult<JsValue> {
+    pub fn infer(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
         let _model = args
             .first()
             .unwrap()

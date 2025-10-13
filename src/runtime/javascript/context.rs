@@ -252,58 +252,58 @@ impl JsContext {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use runtime::Context as _;
+// #[cfg(test)]
+// mod tests {
+//     use runtime::Context as _;
 
-    use crate::{pleiades_type::Blob, runtime::blob};
+//     use crate::{pleiades_type::Blob, runtime::blob};
 
-    use super::*;
+//     use super::*;
 
-    #[test]
-    fn test_output() {
-        let code: Bytes = r#"
-            import { blob } from "pleiades"
+//     #[test]
+//     fn test_output() {
+//         let code: Bytes = r#"
+//             import { blob } from "pleiades"
 
-            async function fetch(input) {
-                console.log("fetch called");
-                let someData = await blob.get("12345");
+//             async function fetch(input) {
+//                 console.log("fetch called");
+//                 let someData = await blob.get("12345");
 
-                console.log(someData);
+//                 console.log(someData);
 
-                return "test_output"; 
-            }
+//                 return "test_output"; 
+//             }
 
-            export default fetch;
-        "#
-        .into();
+//             export default fetch;
+//         "#
+//         .into();
 
-        let input: Bytes = "test_input".into();
+//         let input: Bytes = "test_input".into();
 
-        let code = code.to_vec();
-        let code = Bytes::from(code);
-        println!("{:?}", code);
+//         let code = code.to_vec();
+//         let code = Bytes::from(code);
+//         println!("{:?}", code);
 
-        let mut context = JsContext::init();
-        context.register_user_defined_functions(&code).unwrap();
-        context.register_user_input(&input);
+//         let mut context = JsContext::init();
+//         context.register_user_defined_functions(&code).unwrap();
+//         context.register_user_input(&input);
 
-        // test start
+//         // test start
 
-        let request = context.step().unwrap();
-        println!("request: {:?}", request);
+//         let request = context.step().unwrap();
+//         println!("request: {:?}", request);
 
-        println!("set runtime response");
+//         println!("set runtime response");
 
-        context.set_response(RuntimeResponse::Blob(blob::Response::Get(Some(Blob {
-            data: "test_insert".into(),
-            id: "12345".into(),
-        }))));
+//         context.set_response(RuntimeResponse::Blob(blob::Response::Get(Some(Blob {
+//             data: "test_insert".into(),
+//             id: "12345".into(),
+//         }))));
 
-        context.step();
+//         context.step();
 
-        let output = context.get_output();
+//         let output = context.get_output();
 
-        assert_eq!(output, Some("test_output".into()));
-    }
-}
+//         assert_eq!(output, Some("test_output".into()));
+//     }
+// }

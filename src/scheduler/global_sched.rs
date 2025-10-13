@@ -237,6 +237,61 @@ impl GlobalSched {
     //     }
     // }
 
+    fn start_job_generator(&self) -> tokio::task::JoinHandle<()> {
+        let controller = self.global_sched.clone();
+        let code = self.code.clone();
+        let config = self.config.clone();
+
+        tokio::spawn(async move {
+            // warmup
+            let warmup_rps = Duration::from_secs_f32(1.0 / config.warmup.rps as f32);
+            let mut warmup_ticker = tokio::time::interval(warmup_rps);
+            let warmup_time = config.warmup.time;
+
+            tracing::info!("warmup for {:?}", warmup_time);
+            warmup_ticker.tick().await;
+            let stop = tokio::time::Instant::now() + warmup_time;
+            while tokio::select! {
+                _ = warmup_ticker.tick() => true,
+                _ = tokio::time::sleep_until(stop) => false,
+            } {
+                let job = gen_job((-1).to_string(), code.clone()).await;
+                controller.enqueue_job(job).await;
+            }
+
+            // measurement
+            let mut current_rps = config.measure.start_rps;
+            let final_rps = config.measure.final_rps;
+            let steps = config.measure.steps;
+            let step_time = config.measure.step_time;
+            let step_rps = (final_rps - config.measure.start_rps) / (steps - 1);
+            let mut count = 0;
+
+            tracing::info!("measure for {:?}", step_time * steps);
+
+            for _ in 0..steps {
+                let interval = Duration::from_secs_f32(1.0 / current_rps as f32);
+                let mut ticker = tokio::time::interval(interval);
+                let stop = tokio::time::Instant::now() + step_time;
+
+                tracing::info!("current_rps: {current_rps}, interval: {:?}", interval);
+
+                ticker.tick().await;
+                while tokio::select! {
+                    _ = ticker.tick() => true,
+                    _ = tokio::time::sleep_until(stop) => false,
+                } {
+                    let job = gen_job(count.to_string(), code.clone()).await;
+                    controller.enqueue_job(job).await;
+
+                    count += 1;
+                }
+
+                current_rps += step_rps;
+            }
+        })
+    }
+
     /// cooperative_pipeline
     ///
     ///
@@ -254,19 +309,7 @@ impl GlobalSched {
         //         tokio::time::sleep(Duration::from_millis(200)).await;
         //     }
         // });
-        let controller = self.global_sched.clone();
-        let code = self.code.clone();
-        let job_generator = tokio::spawn(async move {
-            let mut job_id = 0;
-            loop {
-                let code = code.clone();
-                let job = gen_job(job_id.to_string(), code).await;
-                controller.enqueue_job(job).await;
-                job_id += 1;
-
-                tokio::time::sleep(Duration::from_millis(1000)).await;
-            }
-        });
+        let job_generator = self.start_job_generator();
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
@@ -295,7 +338,12 @@ impl GlobalSched {
                     // // local_sched.assign(job).await;
                     // tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
                     // self.sub_contracting(default_job_deadline);
-                    let local_sched = self.local_sched_manager.shortest();
+                    let mut local_sched = self.local_sched_manager.shortest();
+
+                    while local_sched.is_overloaded() {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        local_sched = self.local_sched_manager.shortest();
+                    }
 
                     local_sched.assign(job).await;
                     tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
@@ -379,18 +427,12 @@ async fn gen_job(job_id: String, code: bytes::Bytes) -> Job {
         consumed: Duration::ZERO,
         remaining: Duration::from_secs(300),
         context: None,
-        lambda: Box::new(Lambda {
-            id: String::default(),
-            runtime: String::default(),
-            code: Blob {
-                id: String::default(),
-                data: code,
-            },
-        }),
-        input: Box::new(Blob {
-            id: String::default(),
+        lambda: Lambda {
+            code: Blob { data: code },
+        },
+        input: Blob {
             data: bytes::Bytes::default(),
-        }),
+        },
 
         contracted_at: Instant::now(),
     }

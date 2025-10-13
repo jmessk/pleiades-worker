@@ -5,8 +5,16 @@ num_general_cores: 4
 affinity_mode: fixed
 policy: cooperative
 
-cpu_usage_freq: 1s
-warmup_time: 3s
-measure_time: 3s
+sys_metrics_freq: 1s
 
-script_path: ./scripts/cpu1.js
+warmup:
+  time: 10s
+  rps: 100
+
+measure:
+  start_rps: 100
+  final_rps: 300
+  steps: 5
+  step_time: 5s
+
+script_path: ./scripts/test-1.js

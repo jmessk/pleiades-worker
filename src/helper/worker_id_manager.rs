@@ -7,11 +7,11 @@ pub struct WorkerIdManager {
 }
 
 impl WorkerIdManager {
-    pub async fn new(client: Arc<pleiades_api::Client>, default_job_deadline: Duration) -> Self {
-        let mut manager = Self {
+    pub async fn new(client: Arc<pleiades_api::Client>, _default_job_deadline: Duration) -> Self {
+        Self {
             client,
             set: HashMap::new(),
-        };
+        }
 
         // manager
         //     .insert(
@@ -27,7 +27,7 @@ impl WorkerIdManager {
         //         default_job_deadline,
         //     )
         //     .await;
-        manager
+        // manager
     }
 
     pub async fn register_worker(&self, runtimes: &[&str]) -> String {

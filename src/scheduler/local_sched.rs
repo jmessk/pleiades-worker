@@ -34,7 +34,6 @@ pub struct LocalSched {
 
     // _queuing: Arc<Mutex<Duration>>,
     // _pending: Arc<Mutex<Duration>>,
-
     controller: Controller,
     executor: executor::Controller,
     updater: updater::Controller,
@@ -182,7 +181,10 @@ impl LocalSched {
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
-                Command::Enqueue(enqueue::Request { job, prev_rem_time: _ }) => match job.status {
+                Command::Enqueue(enqueue::Request {
+                    job,
+                    prev_rem_time: _,
+                }) => match job.status {
                     JobStatus::Assigned => {
                         // don't need to add_queuing
                         self.enqueue_execute(job).await;
@@ -298,7 +300,6 @@ pub struct Controller {
     pub command_sender: mpsc::Sender<Command>,
     // queuing: Arc<Mutex<Duration>>,
     // pending: Arc<Mutex<Duration>>,
-
     num_jobs: Arc<AtomicUsize>,
     // cpu_job: Arc<AtomicUsize>,
     // gpu_job: Arc<AtomicUsize>,
@@ -391,6 +392,10 @@ impl Controller {
     //     self.gpu_job
     //         .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     // }
+
+    pub fn is_overloaded(&self) -> bool {
+        self.command_sender.max_capacity() / 2 < self.command_sender.capacity()
+    }
 }
 
 #[derive(Debug)]

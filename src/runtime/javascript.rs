@@ -229,7 +229,7 @@ mod tests {
 
         let blob = Blob {
             data: Bytes::from("Hello, World!"),
-            ..Default::default()
+            // ..Default::default()
         };
 
         runtime

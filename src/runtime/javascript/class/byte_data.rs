@@ -1,16 +1,17 @@
 use boa_engine::{
     class::{Class, ClassBuilder},
-    job::NativeJob,
+    // job::NativeJob,
     js_string,
-    object::builtins::{JsPromise, JsUint8Array},
-    Context, JsData, JsObject, JsResult, JsValue, NativeFunction,
+    object::builtins::JsUint8Array,
+    Context,
+    JsData,
+    JsObject,
+    JsResult,
+    JsValue,
+    NativeFunction,
 };
 use boa_gc::{empty_trace, Finalize, Trace};
 use bytes::Bytes;
-
-use crate::runtime::{
-    blob, javascript::host_defined::HostDefined as _, RuntimeRequest, RuntimeResponse,
-};
 
 #[derive(Debug, Finalize, JsData)]
 pub struct ByteData {

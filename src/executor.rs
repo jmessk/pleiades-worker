@@ -38,7 +38,7 @@ impl Executor {
     ///
     ///
     pub fn new(id: usize) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(256);
+        let (command_sender, command_receiver) = mpsc::channel(16);
         let max_queueing_time = Arc::new(Mutex::new(Duration::ZERO));
 
         let data_manager = Self {
