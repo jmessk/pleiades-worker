@@ -1,3 +1,4 @@
+use core::num;
 use std::time::{Duration, Instant};
 
 // use std::sync::Arc;
@@ -86,6 +87,9 @@ impl GlobalSched {
             "cooperative" | "cooperative-old" => self.cooperative().await,
             _ => unreachable!(),
         }
+
+        let num_handle = self.local_sched_manager.get_num_handle();
+        println!("num_hadle: {num_handle:?}");
 
         tracing::info!("shutdown");
     }
@@ -307,6 +311,7 @@ impl GlobalSched {
                 Command::Contracted { job } => {
                     // self.local_sched_manager.view();
                     // let mut has_wait = false;
+                    // let start = Instant::now();
                     let local_sched = loop {
                         if let Some(sched) = self.local_sched_manager.no_jobs() {
                             break sched;
@@ -314,6 +319,8 @@ impl GlobalSched {
                         // tracing::warn!("all LocalScheds are busy");
                         tokio::time::sleep(Duration::from_millis(10)).await;
                     };
+                    // let elapsed = start.elapsed();
+                    // println!("waited for {elapsed:?}");
 
                     local_sched.assign(job).await;
                     tracing::debug!("assigned job to LocalSched: {}", local_sched.id);

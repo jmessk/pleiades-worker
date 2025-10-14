@@ -1,5 +1,8 @@
 use std::{
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{
+        atomic::{AtomicU64, AtomicUsize},
+        Arc,
+    },
     time::Duration,
 };
 use tokio::sync::{mpsc, Semaphore};
@@ -45,6 +48,7 @@ pub struct LocalSched {
     // gpu_job: Arc<AtomicUsize>,
     // policy: Policy,
     config: WorkerConfig,
+    num_handle: Arc<AtomicU64>,
 }
 
 impl LocalSched {
@@ -73,6 +77,7 @@ impl LocalSched {
         let num_jobs = Arc::new(AtomicUsize::new(0));
         // let cpu_job = Arc::new(AtomicUsize::new(0));
         // let gpu_job = Arc::new(AtomicUsize::new(0));
+        let num_handle = Arc::new(AtomicU64::new(0));
 
         let controller = Controller {
             id,
@@ -82,6 +87,7 @@ impl LocalSched {
             num_jobs: num_jobs.clone(),
             // cpu_job: cpu_job.clone(),
             // gpu_job: gpu_job.clone(),
+            num_handle: num_handle.clone(),
         };
 
         let local_sched = Self {
@@ -100,6 +106,7 @@ impl LocalSched {
             // gpu_job,
             // policy,
             config,
+            num_handle,
         };
 
         (local_sched, controller)
@@ -180,7 +187,7 @@ impl LocalSched {
     //     self.action_sender.send(());
     // }
 
-    async fn execute(&self, job: Job) {
+    async fn execute(&self, job: Job) -> tokio::task::JoinHandle<()> {
         // let prev_rem_time = job.remaining;
         let handle = self.executor.enqueue(job).await;
         let local_sched = self.controller.clone();
@@ -188,8 +195,9 @@ impl LocalSched {
 
         let pending_manager = self.pending_manager.clone();
         let updater = self.updater.clone();
+        let executor = self.executor.clone();
 
-        let id = self.id;
+        // let id = self.id;
 
         tokio::spawn(async move {
             let response = handle.response_receiver.await.unwrap();
@@ -198,8 +206,10 @@ impl LocalSched {
             loop {
                 job = match job.status {
                     JobStatus::Assigned | JobStatus::Ready(_) => {
-                        local_sched.ready(job).await;
-                        break;
+                        // local_sched.ready(job).await;
+                        let handle = executor.enqueue(job).await;
+                        let response = handle.response_receiver.await.unwrap();
+                        response.job
                     }
                     JobStatus::Pending(_) => {
                         let handle = pending_manager.register(job).await;
@@ -218,12 +228,11 @@ impl LocalSched {
                     _ => unreachable!(),
                 };
             }
-
             // local_sched.ready(response.job).await;
-            tracing::debug!("LocalSched {}: enqueued job to executor", id);
+            // tracing::debug!("LocalSched {}: enqueued job to executor", id);
 
             drop(permit);
-        });
+        })
     }
 }
 
@@ -234,7 +243,7 @@ impl LocalSched {
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Enqueue(enqueue::Request { job }) => match job.status {
-                    JobStatus::Assigned | JobStatus::Ready(_) => {
+                    JobStatus::Assigned => {
                         self.execute(job).await;
                     }
                     _ => unreachable!(),
@@ -311,7 +320,7 @@ impl LocalSched {
         }
     }
 
-    async fn blocking(&mut self) {
+    async fn _blocking(&mut self) {
         // let mut shutdown_flag = false;
 
         while let Some(command) = self.command_receiver.recv().await {
@@ -363,6 +372,27 @@ impl LocalSched {
             }
         }
     }
+
+    async fn blocking(&mut self) {
+        // let mut shutdown_flag = false;
+
+        while let Some(command) = self.command_receiver.recv().await {
+            match command {
+                Command::Enqueue(enqueue::Request { job }) => match job.status {
+                    JobStatus::Assigned => {
+                        let handle = self.execute(job).await;
+                        let _ = handle.await;
+                    }
+                    _ => unreachable!(),
+                },
+                Command::ShutdownReq => {
+                    self.schedule_shutdown().await;
+                    // shutdown_flag = true;
+                }
+                Command::ShutdownDone => break,
+            }
+        }
+    }
 }
 
 /// Controller
@@ -379,6 +409,7 @@ pub struct Controller {
     num_jobs: Arc<AtomicUsize>,
     // cpu_job: Arc<AtomicUsize>,
     // gpu_job: Arc<AtomicUsize>,
+    num_handle: Arc<AtomicU64>,
 }
 
 impl Controller {
@@ -386,6 +417,9 @@ impl Controller {
         // this is necessary to avoid double counting
         // self.add_queuing(job.remaining);
         self.num_jobs
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        self.num_handle
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         // let prev_rem_time = job.remaining;
@@ -471,6 +505,10 @@ impl Controller {
 
     pub fn is_overloaded(&self) -> bool {
         self.command_sender.capacity() < self.command_sender.max_capacity() / 4
+    }
+
+    pub fn num_handle(&self) -> u64 {
+        self.num_handle.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

@@ -138,6 +138,13 @@ impl LocalSchedManager {
             item.local_sched.signal_shutdown_req().await;
         }
     }
+
+    pub fn get_num_handle(&self) -> Vec<u64> {
+        self.list
+            .iter()
+            .map(|item| item.local_sched.num_handle())
+            .collect::<Vec<u64>>()
+    }
 }
 
 #[derive(Default)]

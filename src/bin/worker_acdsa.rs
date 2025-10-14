@@ -19,7 +19,7 @@ use pleiades_worker::{
     executor::Executor,
     helper::LocalSchedManager,
     metric::Metric,
-    scheduler::{local_sched, GlobalSched, LocalSched},
+    scheduler::{GlobalSched, LocalSched},
     DataManager, Fetcher, PendingManager, Updater,
 };
 
@@ -73,6 +73,10 @@ fn main() {
     let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
     let tids = Arc::new(Mutex::new(Vec::new()));
     let tids_clone = tids.clone();
+
+    if config.policy.as_str() == "blocking" {
+        runtime_builder.max_blocking_threads(num_executors + 16);
+    };
 
     match config.affinity_mode.as_str() {
         "none" => {}
@@ -520,16 +524,20 @@ async fn save_system_metrics(
         .unwrap();
 
     let mut counter = 0;
-    let pid = sysinfo::get_current_pid().unwrap();
+    // let pid = sysinfo::get_current_pid().unwrap();
     let mut system = sysinfo::System::new_all();
-    let kind = sysinfo::ProcessRefreshKind::nothing().with_memory();
-    let pids = [pid];
-    let processes_to_update = sysinfo::ProcessesToUpdate::Some(&pids);
+    // let kind = sysinfo::ProcessRefreshKind::nothing().with_memory();
+    // let pids = [pid];
+    // let processes_to_update = sysinfo::ProcessesToUpdate::Some(&pids);
 
     // let proc_file = File::open("/proc/self/status").unwrap();
     // let mut proc_reader = std::io::BufReader::new(proc_file);
 
-    let (mut prev_voluntary, mut prev_nonvoluntary) = get_ctx_switch(&tids.lock().unwrap());
+    // 固定化した TID リストから /proc の status ファイルを一度だけ開いて再利用する
+    let mut known_tids: Vec<i32> = tids.lock().unwrap().clone();
+    let mut status_files = open_status_files(&known_tids);
+    let (mut prev_voluntary, mut prev_nonvoluntary) =
+        get_ctx_switch_from_files_async(&mut status_files).await;
 
     start_notifier.changed().await.unwrap();
     let mut ticker = tokio::time::interval(config.sys_metrics_freq);
@@ -539,7 +547,6 @@ async fn save_system_metrics(
             _ = ticker.tick() => true,
         }
     } {
-        // let start = Instant::now();
         /////////////////////////////////////////////////////////////////
         // CPU usage
         /////////////////////////////////////////////////////////////////
@@ -575,7 +582,7 @@ async fn save_system_metrics(
         // Context switch
         /////////////////////////////////////////////////////////////////
 
-        let (voluntary, nonvoluntary) = get_ctx_switch(&tids.lock().unwrap());
+        let (voluntary, nonvoluntary) = get_ctx_switch_from_files_async(&mut status_files).await;
         // let context_switch = voluntary + nonvoluntary;
 
         let dif_voluntary = voluntary - prev_voluntary;
@@ -604,9 +611,6 @@ async fn save_system_metrics(
             counter = 0;
             writer.flush().unwrap();
         }
-
-        // let elapsed = start.elapsed();
-        // println!("sys metrics: {elapsed:?}");
     }
 
     writer.flush().unwrap();
@@ -621,15 +625,28 @@ fn get_tid() -> libc::pid_t {
     unsafe { libc::syscall(libc::SYS_gettid) as libc::pid_t }
 }
 
-fn read_context_switch(tid: i32) -> (u64, u64) {
-    let proc_file = File::open(format!("/proc/self/task/{}/status", tid)).unwrap();
-    let proc_reader = std::io::BufReader::new(proc_file);
+fn open_status_files(tids: &[i32]) -> Vec<File> {
+    tids.iter()
+        .map(|tid| File::open(format!("/proc/self/task/{}/status", tid)).unwrap())
+        .collect()
+}
 
-    let mut voluntary = 0;
-    let mut nonvoluntary = 0;
+fn read_context_switch_from_file(file: &mut File) -> (u64, u64) {
+    use std::io::{Read, Seek, SeekFrom};
 
-    for line in proc_reader.lines() {
-        let line = line.unwrap();
+    if file.seek(SeekFrom::Start(0)).is_err() {
+        return (0, 0);
+    }
+
+    let mut buf = String::new();
+    if file.read_to_string(&mut buf).is_err() {
+        return (0, 0);
+    }
+
+    let mut voluntary = 0u64;
+    let mut nonvoluntary = 0u64;
+
+    for line in buf.lines() {
         if let Some(val) = line.strip_prefix("voluntary_ctxt_switches:") {
             voluntary = val.trim().parse().unwrap_or(0);
         } else if let Some(val) = line.strip_prefix("nonvoluntary_ctxt_switches:") {
@@ -641,17 +658,18 @@ fn read_context_switch(tid: i32) -> (u64, u64) {
     (voluntary, nonvoluntary)
 }
 
-fn get_ctx_switch(tids: &Vec<i32>) -> (u64, u64) {
-    let mut voluntary = 0;
-    let mut nonvoluntary = 0;
+async fn get_ctx_switch_from_files_async(files: &mut [File]) -> (u64, u64) {
+    let mut voluntary = 0u64;
+    let mut nonvoluntary = 0u64;
 
-    for tid in tids {
-        let (v, n) = read_context_switch(*tid);
+    const CHUNK: usize = 16;
+    for (i, file) in files.iter_mut().enumerate() {
+        let (v, n) = read_context_switch_from_file(file);
         voluntary += v;
         nonvoluntary += n;
+        if (i + 1) % CHUNK == 0 {
+            tokio::task::yield_now().await;
+        }
     }
-
-    // println!("voluntary: {voluntary}, nonvoluntary: {nonvoluntary}");
-
     (voluntary, nonvoluntary)
 }
