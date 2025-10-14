@@ -63,7 +63,7 @@ impl LocalSched {
     ) -> (Self, Controller) {
         let channel_cap = match config.policy.as_str() {
             "blocking" => 1,
-            "cooperative" => 256,
+            "cooperative" => 64,
             _ => unreachable!(),
         };
         let (command_sender, command_receiver) = mpsc::channel(channel_cap);
@@ -144,36 +144,65 @@ impl LocalSched {
         tracing::info!("LocalSched {}: scheduled shutdown", self.id);
     }
 
-    async fn enqueue_execute(&self, job: Job) {
-        let prev_rem_time = job.remaining;
+    async fn execute(&self, job: Job) {
+        // let prev_rem_time = job.remaining;
         let handle = self.executor.enqueue(job).await;
         let local_sched = self.controller.clone();
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
+
+        let pending_manager = self.pending_manager.clone();
+        let updater = self.updater.clone();
 
         let id = self.id;
 
         tokio::spawn(async move {
             let response = handle.response_receiver.await.unwrap();
-            local_sched.ready(response.job, prev_rem_time).await;
+
+            let mut job = response.job;
+            loop {
+                job = match job.status {
+                    JobStatus::Assigned | JobStatus::Ready(_) => {
+                        local_sched.ready(job).await;
+                        break;
+                    }
+                    JobStatus::Pending(_) => {
+                        let handle = pending_manager.register(job).await;
+                        let response = handle.response_receiver.await.unwrap();
+                        response.job
+                    }
+                    JobStatus::Finished(_) | JobStatus::Cancelled => {
+                        updater.update_job(job).await;
+
+                        local_sched
+                            .num_jobs
+                            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+
+                        break;
+                    }
+                    _ => unreachable!(),
+                };
+            }
+
+            // local_sched.ready(response.job).await;
             tracing::debug!("LocalSched {}: enqueued job to executor", id);
 
             drop(permit);
         });
     }
 
-    async fn enqueue_pend(&self, job: Job) {
-        let prev_rem_time = job.remaining;
-        let handle = self.pending_manager.register(job).await;
-        let local_sched = self.controller.clone();
-        let permit = self.semaphore.clone().acquire_owned().await.unwrap();
+    // async fn enqueue_pend(&self, job: Job) {
+    //     // let prev_rem_time = job.remaining;
+    //     let handle = self.pending_manager.register(job).await;
+    //     let local_sched = self.controller.clone();
+    //     let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
-        tokio::spawn(async move {
-            let response = handle.response_receiver.await.unwrap();
-            local_sched.ready(response.job, prev_rem_time).await;
+    //     tokio::spawn(async move {
+    //         let response = handle.response_receiver.await.unwrap();
+    //         local_sched.ready(response.job).await;
 
-            drop(permit);
-        });
-    }
+    //         drop(permit);
+    //     });
+    // }
 
     // async fn signal_local_action(&self) {
     //     self.action_sender.send(());
@@ -191,51 +220,9 @@ impl LocalSched {
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
-                Command::Enqueue(enqueue::Request {
-                    job,
-                    prev_rem_time: _,
-                }) => match job.status {
-                    JobStatus::Assigned => {
-                        // don't need to add_queuing
-                        self.enqueue_execute(job).await;
-                    }
-                    JobStatus::Ready(_) => {
-                        // self.controller.sub_pending(prev_rem_time);
-                        // self.controller.add_queuing(job.remaining);
-                        self.enqueue_execute(job).await;
-                    }
-                    JobStatus::Pending(_) => {
-                        // self.controller.sub_queuing(prev_rem_time);
-                        // self.controller.add_pending(job.remaining);
-                        self.enqueue_pend(job).await;
-
-                        // if !shutdown_flag {
-                        //     self.signal_local_action().await;
-                        // }
-                    }
-                    JobStatus::Finished(_) | JobStatus::Cancelled => {
-                        // /////
-                        //
-                        // match job.lambda.runtime.as_str() {
-                        //     "test1_0-0" | "test2_1-0" | "test3_1-1" | "test6_0-0" => {
-                        //         self.controller.decrement_cpu_jobs();
-                        //     }
-                        //     "test4_1-0" | "test5_1-1" => {
-                        //         self.controller.decrement_gpu_jobs();
-                        //     }
-                        //     _ => {}
-                        // };
-                        //
-                        // /////
-
-                        // self.controller.sub_queuing(prev_rem_time);
-                        self.updater.update_job(job).await;
-
-                        self.num_jobs
-                            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                        // if !shutdown_flag {
-                        //     self.signal_local_action().await;
-                        // }
+                Command::Enqueue(enqueue::Request { job }) => match job.status {
+                    JobStatus::Assigned | JobStatus::Ready(_) => {
+                        self.execute(job).await;
                     }
                     _ => unreachable!(),
                 },
@@ -253,10 +240,7 @@ impl LocalSched {
 
         while let Some(command) = self.command_receiver.recv().await {
             match command {
-                Command::Enqueue(enqueue::Request {
-                    job,
-                    prev_rem_time: _,
-                }) => {
+                Command::Enqueue(enqueue::Request { job }) => {
                     let mut job = job;
 
                     loop {
@@ -328,14 +312,14 @@ impl Controller {
         self.num_jobs
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let prev_rem_time = job.remaining;
-        let request = Command::Enqueue(enqueue::Request { job, prev_rem_time });
+        // let prev_rem_time = job.remaining;
+        let request = Command::Enqueue(enqueue::Request { job });
 
         self.command_sender.send(request).await.unwrap();
     }
 
-    pub async fn ready(&self, job: Job, prev_rem_time: Duration) {
-        let request = Command::Enqueue(enqueue::Request { job, prev_rem_time });
+    pub async fn ready(&self, job: Job) {
+        let request = Command::Enqueue(enqueue::Request { job });
         self.command_sender.send(request).await.unwrap();
     }
 
@@ -427,6 +411,6 @@ pub mod enqueue {
     #[derive(Debug)]
     pub struct Request {
         pub job: Job,
-        pub prev_rem_time: Duration,
+        // pub prev_rem_time: Duration,
     }
 }
