@@ -311,10 +311,7 @@ impl GlobalSched {
                         if let Some(sched) = self.local_sched_manager.no_jobs() {
                             break sched;
                         }
-                        // if !has_wait {
-                        //     has_wait = true;
-                        //     tracing::warn!("all LocalScheds are busy");
-                        // }
+                        // tracing::warn!("all LocalScheds are busy");
                         tokio::time::sleep(Duration::from_millis(10)).await;
                     };
 
@@ -390,9 +387,7 @@ impl GlobalSched {
                         local_sched = self.local_sched_manager.shortest();
                     }
 
-                    // if has_wait {
-                    //     tracing::warn!("all LocalScheds are busy");
-                    // }
+                    // tracing::warn!("all LocalScheds are busy");
 
                     local_sched.assign(job).await;
                     tracing::debug!("assigned job to LocalSched: {}", local_sched.id);

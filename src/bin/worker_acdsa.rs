@@ -93,6 +93,12 @@ fn main() {
                     static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
                     let count = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
+                    // 再開時はスキップ
+                    if count >= num_tokio_workers + num_executors {
+                        // println!("skip");
+                        return;
+                    }
+
                     // if count < num_tokio_workers {
                     //     // 後半のコアに割り当て
                     //     let last = num_executor_cores + num_tokio_workers;
@@ -113,6 +119,7 @@ fn main() {
                         // let last = num_executor_cores + num_tokio_workers;
                         // let core_list = (num_executor_cores..last).collect::<Vec<usize>>();
                         let core_list = [8, 9, 20, 21];
+                        // let core_list = [8, 9, 10, 11, 20, 21, 22, 23];
                         affinity::set_thread_affinity(core_list).unwrap();
                         println!("tokio worker is set to core {core_list:?}");
                     } else {
@@ -135,6 +142,11 @@ fn main() {
                     static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
                     let count = CORE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
+                    // 再開時はスキップ
+                    if count >= num_tokio_workers + num_executors {
+                        return;
+                    }
+
                     // if count < num_executors {
                     //     let core_id = count % num_executor_cores;
                     //     core_affinity::set_for_current(core_affinity::CoreId { id: core_id });
@@ -152,6 +164,7 @@ fn main() {
                         // let last = num_executor_cores + num_tokio_workers;
                         // let core_list = (num_executor_cores..last).collect::<Vec<usize>>();
                         let core_list = [8, 9, 20, 21];
+                        // let core_list = [8, 9, 10, 11, 20, 21, 22, 23];
                         affinity::set_thread_affinity(core_list).unwrap();
                         println!("tokio worker is set to core {core_list:?}");
                     } else {
@@ -431,7 +444,7 @@ async fn save_request_metrics(
     start_notify_sender: tokio::sync::watch::Sender<()>,
     stop_notify_sender: tokio::sync::watch::Sender<()>,
 ) -> (Duration, u64, u64, u32) {
-    let request_metrics = File::create(dir.join("request_metrics.csv")).unwrap();
+    let request_metrics = File::create(dir.join("request.csv")).unwrap();
     let mut request_metrics = BufWriter::new(request_metrics);
     request_metrics
         .write_all(b"id,timestamp(us),status,elapsed(us),consumed_cpu(us)\n")
@@ -612,7 +625,7 @@ async fn save_system_metrics(
     // freq: Duration,
     config: WorkerConfig,
 ) {
-    let file_name = dir.join("system_metrics.csv");
+    let file_name = dir.join("system.csv");
     let file = File::create(&file_name).unwrap();
     let mut writer = BufWriter::new(file);
 
