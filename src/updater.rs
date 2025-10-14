@@ -43,8 +43,8 @@ impl Updater {
         data_manager_controller: data_manager::Controller,
         enable_metrics: bool,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(512);
-        let (metric_sender, metric_receiver) = mpsc::channel(512);
+        let (command_sender, command_receiver) = mpsc::channel(1024);
+        let (metric_sender, metric_receiver) = mpsc::channel(1024);
 
         let updater = Self {
             client,
@@ -53,7 +53,7 @@ impl Updater {
             enable_metrics,
             metric_sender,
             max_concurrency: 64,
-            semaphore: Arc::new(Semaphore::new(512)),
+            semaphore: Arc::new(Semaphore::new(1024)),
         };
 
         let controller = Controller {

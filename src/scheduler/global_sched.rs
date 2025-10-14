@@ -83,7 +83,7 @@ impl GlobalSched {
 
         match self.config.policy.as_str() {
             "blocking" => self.blocking().await,
-            "cooperative" => self.cooperative().await,
+            "cooperative" | "cooperative-old" => self.cooperative().await,
             _ => unreachable!(),
         }
 

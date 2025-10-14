@@ -4,6 +4,7 @@ use pleiades_worker::scheduler::global_sched;
 use pleiades_worker::{updater, WorkerConfig};
 // use std::collections::HashMap;
 use std::io::prelude::*;
+use std::sync::Mutex;
 use std::time::Instant;
 use std::{
     fs::File,
@@ -56,25 +57,12 @@ fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
-    // tracing_subscriber::registry()
-    //     .with(tracing_subscriber::EnvFilter::from_default_env())
-    //     .with(tracing_subscriber::fmt::layer())
-    //     .with(console_subscriber::spawn())
-    //     .try_init()
-    //     .unwrap();
 
-    // console_subscriber::init();
-    //
-    // /////
-
-    // let cpu_list = core_affinity::get_core_ids().unwrap();
-    // let num_cores = cpu_list.len();
-    // let num_host_cores = affinity::get_core_num();
     let num_all_cores = config.num_executor_cores + config.num_general_cores;
     let num_executors = config.num_executors;
     let num_executor_cores = config.num_executor_cores;
     let num_tokio_workers = config.num_general_cores;
-    let hyperthreads_executor = config.hyperthreads_executor;
+    // let hyperthreads_executor = config.hyperthreads_executor;
 
     // println!("num_host_cores: {num_host_cores}");
     println!("num_all_cores: {num_all_cores}");
@@ -83,6 +71,8 @@ fn main() {
     println!("num_tokio_workers: {num_tokio_workers}");
 
     let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
+    let tids = Arc::new(Mutex::new(Vec::new()));
+    let tids_clone = tids.clone();
 
     match config.affinity_mode.as_str() {
         "none" => {}
@@ -99,39 +89,18 @@ fn main() {
                         return;
                     }
 
-                    // if count < num_tokio_workers {
-                    //     // 後半のコアに割り当て
-                    //     let last = num_executor_cores + num_tokio_workers;
-                    //     let list = (num_tokio_workers..last).collect::<Vec<usize>>();
-
-                    //     affinity::set_thread_affinity(&list).unwrap();
-                    //     println!("tokio worker is set to core {list:?}");
-                    // } else if count < num_tokio_workers + num_executors {
-                    //     let list = (0..num_executor_cores).collect::<Vec<usize>>();
-
-                    //     affinity::set_thread_affinity(&list).unwrap();
-                    //     println!("executor is set to core {list:?}");
-                    // }
-                    // if count < num_executors {
-                    //     let core_list = (0..num_executor_cores).collect::<Vec<usize>>();
-
                     if count < num_tokio_workers {
-                        // let last = num_executor_cores + num_tokio_workers;
-                        // let core_list = (num_executor_cores..last).collect::<Vec<usize>>();
                         let core_list = [8, 9, 20, 21];
                         // let core_list = [8, 9, 10, 11, 20, 21, 22, 23];
                         affinity::set_thread_affinity(core_list).unwrap();
                         println!("tokio worker is set to core {core_list:?}");
                     } else {
                         let core_list = (0..num_executor_cores).collect::<Vec<usize>>();
-                        // let core_list = if hyperthreads_executor {
-                        //     (0..num_executor_cores).collect::<Vec<usize>>()
-                        // } else {
-                        //     (0..num_executor_cores).step_by(2).collect::<Vec<usize>>()
-                        // };
-
                         affinity::set_thread_affinity(&core_list).unwrap();
                         println!("executor is set to core {core_list:?}");
+
+                        let mut tids = tids.lock().unwrap();
+                        tids.push(get_tid());
                     }
                 });
         }
@@ -147,35 +116,18 @@ fn main() {
                         return;
                     }
 
-                    // if count < num_executors {
-                    //     let core_id = count % num_executor_cores;
-                    //     core_affinity::set_for_current(core_affinity::CoreId { id: core_id });
-                    //     println!("executor is set to core {core_id:?}");
-                    // } else {
-                    //     // 後半のコアに割り当て
-                    //     let last = num_executor_cores + num_tokio_workers;
-                    //     let core_list = (num_executor_cores..last).collect::<Vec<usize>>();
-
-                    //     affinity::set_thread_affinity(&core_list).unwrap();
-                    //     println!("tokio worker is set to core {core_list:?}");
-                    // }
-
                     if count < num_tokio_workers {
-                        // let last = num_executor_cores + num_tokio_workers;
-                        // let core_list = (num_executor_cores..last).collect::<Vec<usize>>();
                         let core_list = [8, 9, 20, 21];
                         // let core_list = [8, 9, 10, 11, 20, 21, 22, 23];
                         affinity::set_thread_affinity(core_list).unwrap();
                         println!("tokio worker is set to core {core_list:?}");
                     } else {
                         let core_id = (count - num_tokio_workers) % num_executor_cores;
-                        // let core_id = if hyperthreads_executor {
-                        //     (count - num_tokio_workers) % num_executor_cores
-                        // } else {
-                        //     ((count - num_tokio_workers) * 2) % num_executor_cores
-                        // };
                         core_affinity::set_for_current(core_affinity::CoreId { id: core_id });
                         println!("executor is set to core {core_id:?}");
+
+                        let mut tids = tids.lock().unwrap();
+                        tids.push(get_tid());
                     }
                 });
         }
@@ -184,13 +136,13 @@ fn main() {
     let runtime = runtime_builder.enable_all().build().unwrap();
 
     runtime.block_on(async move {
-        worker(args, config).await.join_all().await;
+        worker(args, config, tids_clone).await.join_all().await;
         // tokio::time::sleep(Duration::from_secs(10)).await;
     });
     // worker(config).await;
 }
 
-async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
+async fn worker(_args: Arg, config: WorkerConfig, tids: Arc<Mutex<Vec<i32>>>) -> JoinSet<()> {
     // let pleiades_url = std::env::var("PLEIADES_URL").unwrap();
     let client = Arc::new(pleiades_api::Client::try_new("http://example.com/").unwrap());
     // println!("{:?}", client.ping().await.unwrap());
@@ -241,8 +193,6 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
     //
     // /////
 
-    // tokio::time::sleep(Duration::from_secs(10)).await;
-
     // Initialize LocalSched and Executor
     //
     let mut local_sched_manager_builder = LocalSchedManager::builder();
@@ -271,32 +221,7 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
     });
 
     let local_sched_manager = local_sched_manager_builder.build().unwrap();
-    //
-    // /////
 
-    // let mut worker_id_manager = WorkerIdManager::new(client, config.job_deadline).await;
-    // worker_id_manager
-    //     .insert(
-    //         "default",
-    //         &[
-    //             "pleiades+example",
-    //             "js+compress",
-    //             "js+resize",
-    //             "js+fib",
-    //             "js+gpu",
-    //             "js+counter",
-    //         ],
-    //         config.job_deadline,
-    //     )
-    //     .await;
-
-    // Initialize GlobalSched
-    //
-    // let policy = match config.policy.as_str() {
-    //     "cooperative" => local_sched::Policy::Cooperative,
-    //     // "blocking" => local_sched::Policy::Blocking,
-    //     _ => panic!("invalid policy"),
-    // };
     let (mut global_sched, global_sched_controller) = GlobalSched::new(
         // contractor_controller,
         local_sched_manager,
@@ -315,13 +240,6 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
 
     // metrics
     //
-    // let (stop_notify_sender, mut stop_notify_receiver) = tokio::sync::watch::channel(());
-    // join_set.spawn(save_cpu_usage(
-    //     config.num_cpus,
-    //     stop_notify_sender,
-    //     global_sched_controller,
-    // ));
-    // if let Some(_num_iteration) = args.num_iteration {
     let timestamp = chrono::Local::now().format("%Y_%m%d_%H-%M-%S");
     let dir = PathBuf::from(format!("./metrics/{timestamp}"));
     std::fs::create_dir_all(&dir).unwrap();
@@ -336,6 +254,7 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
         stop_notify_receiver,
         // config.sys_metrics_freq,
         config.clone(),
+        tids,
     ));
 
     let summary = save_request_metrics(
@@ -352,30 +271,11 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
     save_summary(dir.clone(), config, summary).await;
 
     println!("metrics are saved to {}", dir.to_str().unwrap());
-    // } else {
-    //     tokio::signal::ctrl_c().await.unwrap();
-    //     global_sched_controller.signal_shutdown_req().await;
-    // }
     //
     // /////
 
     join_set
 }
-
-// impl Default for WorkerConfig {
-//     fn default() -> Self {
-//         Self {
-//             // num_contractors: 1,
-//             num_executors: 1,
-//             num_cpus: 1,
-//             affinity_mode: 0,
-//             policy: "cooperative".to_string(),
-//             // exec_deadline: Duration::from_millis(300),
-//             // job_deadline: Duration::from_millis(100),
-//             cpu_usage_freq: Duration::from_secs(1),
-//         }
-//     }
-// }
 
 async fn save_summary(
     dir: PathBuf,
@@ -406,34 +306,6 @@ max_rps: {max_rps}
         .unwrap();
 
     writer.flush().unwrap();
-
-    // writer.write_all("elapsed_avr:\n".as_bytes()).unwrap();
-    // runtime_elapsed_arv.iter().for_each(|(runtime, avr)| {
-    //     writer
-    //         .write_all(format!("  {runtime}: {avr}\n").as_bytes())
-    //         .unwrap();
-    // });
-
-    //     writer.write_all("runtime:\n".as_bytes()).unwrap();
-    //     runtime_sum
-    //         .iter()
-    //         .for_each(|(runtime, (count, elapsed, consumed))| {
-    //             writer
-    //                 .write_all(
-    //                     format!(
-    //                         r"
-    //   {runtime}:
-    //     num: {count}
-    //     elapsed_avr: {elapsed}
-    //     consumed_avr: {consumed}",
-    //                         count = count,
-    //                         elapsed = *elapsed as f64 / *count as f64,
-    //                         consumed = *consumed as f64 / *count as f64,
-    //                     )
-    //                     .as_bytes(),
-    //                 )
-    //                 .unwrap();
-    //         });
 }
 
 async fn save_request_metrics(
@@ -452,7 +324,9 @@ async fn save_request_metrics(
 
     let rps_metrics = File::create(dir.join("rps.csv")).unwrap();
     let mut rps_metrics = BufWriter::new(rps_metrics);
-    rps_metrics.write_all(b"timestamp(s),rps\n").unwrap();
+    rps_metrics
+        .write_all(b"timestamp(s),rps,latency_avg(us)\n")
+        .unwrap();
 
     let mut first_instant = None;
     let mut last_instant = None;
@@ -464,6 +338,8 @@ async fn save_request_metrics(
     let mut current_rps = 0;
     let mut max_rps = 0;
 
+    let mut total_elapsed = Duration::ZERO;
+
     //
     // let mut each_sum = [0u64; 6];
     // let mut runtime_sum = HashMap::<String, (u32, u64, u64)>::new();
@@ -473,7 +349,7 @@ async fn save_request_metrics(
 
     while let Some(n) = tokio::select! {
         _ = updater_controller.recv_metric() => Some(0),
-        _ = tokio::signal::ctrl_c() => Some(1),
+        // _ = tokio::signal::ctrl_c() => Some(1),
         _ = warmup_timer.tick() => None,
     } {
         match n {
@@ -500,7 +376,7 @@ async fn save_request_metrics(
     let mut count = 0;
     while let Some(metric) = tokio::select! {
         metric = updater_controller.recv_metric() => metric,
-        _ = tokio::signal::ctrl_c() => None,
+        // _ = tokio::signal::ctrl_c() => None,
         _ = measure_timer.tick() => None,
     } {
         let Metric {
@@ -541,21 +417,30 @@ async fn save_request_metrics(
         }
 
         current_rps += 1;
+        total_elapsed += elapsed;
+
         if 1 <= current_instant.elapsed().as_secs() {
             if max_rps < current_rps {
                 max_rps = current_rps;
             }
+
+            let latency = if 0 < current_rps {
+                total_elapsed.as_micros() / current_rps as u128
+            } else {
+                0
+            };
             current_instant = Instant::now();
             rps_metrics
                 .write_all(
                     format!(
-                        "{timestamp},{current_rps}\n",
+                        "{timestamp},{current_rps},{latency}\n",
                         timestamp = (current_instant - start_measurement).as_secs(),
                     )
                     .as_bytes(),
                 )
                 .unwrap();
             current_rps = 0;
+            total_elapsed = Duration::ZERO;
         }
 
         //
@@ -624,13 +509,14 @@ async fn save_system_metrics(
     mut stop_notifier: tokio::sync::watch::Receiver<()>,
     // freq: Duration,
     config: WorkerConfig,
+    tids: Arc<Mutex<Vec<i32>>>,
 ) {
     let file_name = dir.join("system.csv");
     let file = File::create(&file_name).unwrap();
     let mut writer = BufWriter::new(file);
 
     writer
-        .write_all(b"timestamp(s),cpu_usage(%),memory(bytes),context_switch\n")
+        .write_all(b"timestamp(s),cpu_usage(%),context_switch(sum),voluntary,nonvoluntary\n")
         .unwrap();
 
     let mut counter = 0;
@@ -640,15 +526,20 @@ async fn save_system_metrics(
     let pids = [pid];
     let processes_to_update = sysinfo::ProcessesToUpdate::Some(&pids);
 
+    // let proc_file = File::open("/proc/self/status").unwrap();
+    // let mut proc_reader = std::io::BufReader::new(proc_file);
+
+    let (mut prev_voluntary, mut prev_nonvoluntary) = get_ctx_switch(&tids.lock().unwrap());
+
     start_notifier.changed().await.unwrap();
     let mut ticker = tokio::time::interval(config.sys_metrics_freq);
-
     while {
         tokio::select! {
             _ = stop_notifier.changed() => false,
             _ = ticker.tick() => true,
         }
     } {
+        // let start = Instant::now();
         /////////////////////////////////////////////////////////////////
         // CPU usage
         /////////////////////////////////////////////////////////////////
@@ -660,24 +551,6 @@ async fn save_system_metrics(
             .map(|cpu| cpu.cpu_usage())
             .sum::<f32>()
             / config.num_executor_cores as f32;
-
-        // let cpu_usage = if config.hyperthreads_executor {
-        //     cpu_list
-        //         .iter()
-        //         .take(config.num_executor_cores)
-        //         .map(|cpu| cpu.cpu_usage())
-        //         .sum::<f32>()
-        //         / config.num_executor_cores as f32
-        // } else {
-        //     // ハイパースレッディングが無効な場合、偶数番目のCPUの使用率のみを平均を取る
-        //     cpu_list
-        //         .iter()
-        //         .take(config.num_executor_cores)
-        //         .step_by(2)
-        //         .map(|cpu| cpu.cpu_usage())
-        //         .sum::<f32>()
-        //         / (config.num_executor_cores / 2) as f32
-        // };
 
         // writer
         //     .write_all(format!(",{cpu_usage}").as_bytes())
@@ -702,13 +575,27 @@ async fn save_system_metrics(
         // Context switch
         /////////////////////////////////////////////////////////////////
 
+        let (voluntary, nonvoluntary) = get_ctx_switch(&tids.lock().unwrap());
+        // let context_switch = voluntary + nonvoluntary;
+
+        let dif_voluntary = voluntary - prev_voluntary;
+        let dif_nonvoluntary = nonvoluntary - prev_nonvoluntary;
+        let dif_context_switch = dif_voluntary + dif_nonvoluntary;
+
+        prev_voluntary = voluntary;
+        prev_nonvoluntary = nonvoluntary;
+
         /////////////////////////////////////////////////////////////////
         // finalize
         /////////////////////////////////////////////////////////////////
 
         let timestamp = counter * config.sys_metrics_freq.as_secs();
         writer
-            .write_all(format!("{timestamp},{cpu_usage}\n", cpu_usage = cpu_usage as u8).as_bytes())
+            .write_all(
+                format!("{timestamp},{cpu_usage},{dif_context_switch},{dif_voluntary},{dif_nonvoluntary}\n"
+                , cpu_usage = cpu_usage as u8)
+                    .as_bytes(),
+            )
             .unwrap();
         // writer.write_all(b"\n").unwrap();
 
@@ -717,6 +604,9 @@ async fn save_system_metrics(
             counter = 0;
             writer.flush().unwrap();
         }
+
+        // let elapsed = start.elapsed();
+        // println!("sys metrics: {elapsed:?}");
     }
 
     writer.flush().unwrap();
@@ -725,4 +615,43 @@ async fn save_system_metrics(
     // stop_notify.send(()).unwrap();
 
     // println!("cpu usage is saved to {file_name}");
+}
+
+fn get_tid() -> libc::pid_t {
+    unsafe { libc::syscall(libc::SYS_gettid) as libc::pid_t }
+}
+
+fn read_context_switch(tid: i32) -> (u64, u64) {
+    let proc_file = File::open(format!("/proc/self/task/{}/status", tid)).unwrap();
+    let proc_reader = std::io::BufReader::new(proc_file);
+
+    let mut voluntary = 0;
+    let mut nonvoluntary = 0;
+
+    for line in proc_reader.lines() {
+        let line = line.unwrap();
+        if let Some(val) = line.strip_prefix("voluntary_ctxt_switches:") {
+            voluntary = val.trim().parse().unwrap_or(0);
+        } else if let Some(val) = line.strip_prefix("nonvoluntary_ctxt_switches:") {
+            nonvoluntary = val.trim().parse().unwrap_or(0);
+            break;
+        }
+    }
+
+    (voluntary, nonvoluntary)
+}
+
+fn get_ctx_switch(tids: &Vec<i32>) -> (u64, u64) {
+    let mut voluntary = 0;
+    let mut nonvoluntary = 0;
+
+    for tid in tids {
+        let (v, n) = read_context_switch(*tid);
+        voluntary += v;
+        nonvoluntary += n;
+    }
+
+    // println!("voluntary: {voluntary}, nonvoluntary: {nonvoluntary}");
+
+    (voluntary, nonvoluntary)
 }

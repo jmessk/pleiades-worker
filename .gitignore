@@ -2,6 +2,7 @@
 /metrics
 /assets/*
 /cpu_usage
+/results-b
 
 .env
 .DS_Store
