@@ -7,7 +7,7 @@ use tokio::sync::{mpsc, Semaphore};
 use crate::{
     executor, pending_manager,
     pleiades_type::{Job, JobStatus},
-    updater,
+    updater, WorkerConfig,
 };
 
 /// Policy
@@ -43,6 +43,8 @@ pub struct LocalSched {
     num_jobs: Arc<AtomicUsize>,
     // cpu_job: Arc<AtomicUsize>,
     // gpu_job: Arc<AtomicUsize>,
+    // policy: Policy,
+    config: WorkerConfig,
 }
 
 impl LocalSched {
@@ -57,8 +59,14 @@ impl LocalSched {
         updater_controller: updater::Controller,
         pending_manager: pending_manager::Controller,
         // action_sender: watch::Sender<()>,
+        config: WorkerConfig,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(256);
+        let channel_cap = match config.policy.as_str() {
+            "blocking" => 1,
+            "cooperative" => 256,
+            _ => unreachable!(),
+        };
+        let (command_sender, command_receiver) = mpsc::channel(channel_cap);
         // let queuing = Arc::new(Mutex::new(Duration::ZERO));
         // let pending = Arc::new(Mutex::new(Duration::ZERO));
 
@@ -90,6 +98,8 @@ impl LocalSched {
             num_jobs,
             // cpu_job,
             // gpu_job,
+            // policy,
+            config,
         };
 
         (local_sched, controller)
@@ -98,12 +108,12 @@ impl LocalSched {
     /// run
     ///
     ///
-    pub async fn run(&mut self, policy: Policy) {
+    pub async fn run(&mut self) {
         tracing::info!("LocalSched {}: running", self.id);
 
-        match policy {
-            Policy::Cooperative => self.cooperative().await,
-            // Policy::Blocking => self.blocking().await,
+        match self.config.policy.as_str() {
+            "cooperative" => self.cooperative().await,
+            "blocking" => self.blocking().await,
             _ => unreachable!(),
         }
 
@@ -238,55 +248,61 @@ impl LocalSched {
         }
     }
 
-    // async fn blocking(&mut self) {
-    //     let mut shutdown_flag = false;
+    async fn blocking(&mut self) {
+        // let mut shutdown_flag = false;
 
-    //     while let Some(command) = self.command_receiver.recv().await {
-    //         match command {
-    //             Command::Enqueue(enqueue::Request { job, prev_rem_time }) => {
-    //                 let mut job = job;
+        while let Some(command) = self.command_receiver.recv().await {
+            match command {
+                Command::Enqueue(enqueue::Request {
+                    job,
+                    prev_rem_time: _,
+                }) => {
+                    let mut job = job;
 
-    //                 loop {
-    //                     job = match job.status {
-    //                         JobStatus::Assigned | JobStatus::Ready(_) => {
-    //                             let handle = self.executor.enqueue(job).await;
-    //                             let response = handle.response_receiver.await.unwrap();
+                    loop {
+                        job = match job.status {
+                            JobStatus::Assigned | JobStatus::Ready(_) => {
+                                let handle = self.executor.enqueue(job).await;
+                                let response = handle.response_receiver.await.unwrap();
 
-    //                             response.job
-    //                         }
-    //                         JobStatus::Pending(_) => {
-    //                             let handle = self.pending_manager.register(job).await;
-    //                             let response = handle.response_receiver.await.unwrap();
+                                response.job
+                            }
+                            JobStatus::Pending(_) => {
+                                let handle = self.pending_manager.register(job).await;
+                                let response = handle.response_receiver.await.unwrap();
+                                response.job
+                            }
+                            JobStatus::Finished(_) | JobStatus::Cancelled => {
+                                // self.controller.sub_queuing(prev_rem_time);
+                                // self.updater.update_job(job).await;
 
-    //                             println!("pending (unreachable)");
+                                // self.num_jobs
+                                //     .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
 
-    //                             response.job
-    //                         }
-    //                         JobStatus::Finished(_) | JobStatus::Cancelled => {
-    //                             self.controller.sub_queuing(prev_rem_time);
-    //                             self.updater.update_job(job).await;
+                                // if !shutdown_flag {
+                                //     self.signal_local_action().await;
+                                // }
 
-    //                             self.num_jobs
-    //                                 .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                                // break;
+                                self.updater.update_job(job).await;
 
-    //                             if !shutdown_flag {
-    //                                 self.signal_local_action().await;
-    //                             }
+                                self.num_jobs
+                                    .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
 
-    //                             break;
-    //                         }
-    //                         _ => unreachable!(),
-    //                     }
-    //                 }
-    //             }
-    //             Command::ShutdownReq => {
-    //                 self.schedule_shutdown().await;
-    //                 shutdown_flag = true;
-    //             }
-    //             Command::ShutdownDone => break,
-    //         }
-    //     }
-    // }
+                                break;
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                Command::ShutdownReq => {
+                    self.schedule_shutdown().await;
+                    // shutdown_flag = true;
+                }
+                Command::ShutdownDone => break,
+            }
+        }
+    }
 }
 
 /// Controller
@@ -394,7 +410,7 @@ impl Controller {
     // }
 
     pub fn is_overloaded(&self) -> bool {
-        self.command_sender.max_capacity() / 2 < self.command_sender.capacity()
+        self.command_sender.capacity() < self.command_sender.max_capacity() / 2
     }
 }
 

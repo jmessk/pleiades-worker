@@ -269,12 +269,15 @@ impl GlobalSched {
 
             tracing::info!("measure for {:?}", step_time * steps);
 
-            for _ in 0..steps {
+            for step in 1..=steps {
                 let interval = Duration::from_secs_f32(1.0 / current_rps as f32);
                 let mut ticker = tokio::time::interval(interval);
                 let stop = tokio::time::Instant::now() + step_time;
 
-                tracing::info!("current_rps: {current_rps}, interval: {:?}", interval);
+                tracing::info!(
+                    "step {step}: current_rps: {current_rps}, interval: {:?}",
+                    interval
+                );
 
                 ticker.tick().await;
                 while tokio::select! {
@@ -290,6 +293,40 @@ impl GlobalSched {
                 current_rps += step_rps;
             }
         })
+    }
+
+    async fn blocking(&mut self) {
+        let job_generator = self.start_job_generator();
+
+        while let Some(command) = self.command_receiver.recv().await {
+            match command {
+                Command::Contracted { job } => {
+                    let mut local_sched = self.local_sched_manager.shortest();
+
+                    while local_sched.is_overloaded() {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        local_sched = self.local_sched_manager.shortest();
+                    }
+
+                    local_sched.assign(job).await;
+                    tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
+                }
+                // Command::NoJob => self.sub_contracting(default_job_deadline),
+                // Command::LocalAction => {
+                //     self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
+                //         .await
+                // }
+                Command::ShutdownReq => {
+                    self.schedule_shutdown().await;
+                    job_generator.abort();
+                }
+                Command::ShutdownDone => {
+                    self.local_sched_manager.signal_shutdown_req().await;
+                    break;
+                }
+                _ => {}
+            }
+        }
     }
 
     /// cooperative_pipeline

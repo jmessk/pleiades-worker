@@ -1,20 +1,20 @@
-num_executors: 16
+num_executors: 64
 num_executor_cores: 16
 num_general_cores: 4
 
-affinity_mode: fixed
+affinity_mode: unfixed
 policy: cooperative
 
 sys_metrics_freq: 1s
 
 warmup:
-  time: 10s
-  rps: 100
+  time: 1s
+  rps: 1000
 
 measure:
-  start_rps: 100
-  final_rps: 300
-  steps: 5
+  start_rps: 1000
+  final_rps: 20000
+  steps: 4
   step_time: 5s
 
 script_path: ./scripts/test-1.js

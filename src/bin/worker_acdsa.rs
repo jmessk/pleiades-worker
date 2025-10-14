@@ -242,7 +242,7 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
 
         let policy = match config.policy.as_str() {
             "cooperative" => local_sched::Policy::Cooperative,
-            // "blocking" => local_sched::Policy::Blocking,
+            "blocking" => local_sched::Policy::Blocking,
             _ => panic!("invalid policy"),
         };
         join_set.spawn(async move {
@@ -577,6 +577,12 @@ async fn save_request_metrics(
     let elapsed = last_instant
         .map(|last| last - first_instant.unwrap())
         .unwrap_or(Duration::ZERO);
+
+    // while let Some(_metric) = updater_controller.recv_metric().await  {}
+    while tokio::select! {
+        _ = updater_controller.recv_metric() => true,
+        _ = tokio::time::sleep(Duration::from_millis(100)) => false,
+    } {}
 
     (
         elapsed, finished, canceled,

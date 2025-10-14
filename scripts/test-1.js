@@ -1,7 +1,7 @@
 export default async function fetch(input) {
 
     let count = 0;
-    for (let i = 0; i < 100000; i++) {
+    for (let i = 0; i < 5000; i++) {
         count += i;
     }
 
