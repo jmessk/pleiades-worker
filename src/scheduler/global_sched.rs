@@ -9,7 +9,7 @@ use crate::{
     WorkerConfig,
 };
 
-use super::local_sched::Policy;
+// use super::local_sched::Policy;
 
 /// Scheduler
 ///
@@ -27,7 +27,7 @@ pub struct GlobalSched {
     // contractor: contractor::Controller,
     local_sched_manager: LocalSchedManager,
     // worker_id_manager: WorkerIdManager,
-    policy: Policy,
+    // policy: Policy,
     code: bytes::Bytes,
 
     config: WorkerConfig,
@@ -44,7 +44,7 @@ impl GlobalSched {
         local_sched_manager: LocalSchedManager,
         // worker_id_manager: WorkerIdManager,
         // action_receiver: watch::Receiver<()>,
-        policy: Policy,
+        // policy: Policy,
         code: bytes::Bytes,
         config: WorkerConfig,
     ) -> (Self, Controller) {
@@ -61,7 +61,7 @@ impl GlobalSched {
             // contractor: contractor_controller,
             local_sched_manager,
             // worker_id_manager,
-            policy,
+            // policy,
             code,
             config,
         };
@@ -81,10 +81,10 @@ impl GlobalSched {
         //     global_sched,
         // ));
 
-        match self.policy {
-            // Policy::Blocking => self.blocking().await,
-            Policy::Cooperative => self.cooperative().await,
-            _ => {}
+        match self.config.policy.as_str() {
+            "blocking" => self.blocking().await,
+            "cooperative" => self.cooperative().await,
+            _ => unreachable!(),
         }
 
         tracing::info!("shutdown");
@@ -248,7 +248,7 @@ impl GlobalSched {
             let mut warmup_ticker = tokio::time::interval(warmup_rps);
             let warmup_time = config.warmup.time;
 
-            tracing::info!("warmup for {:?}", warmup_time);
+            println!("warmup for {:?}", warmup_time);
             warmup_ticker.tick().await;
             let stop = tokio::time::Instant::now() + warmup_time;
             while tokio::select! {
@@ -264,17 +264,21 @@ impl GlobalSched {
             let final_rps = config.measure.final_rps;
             let steps = config.measure.steps;
             let step_time = config.measure.step_time;
-            let step_rps = (final_rps - config.measure.start_rps) / (steps - 1);
+            let step_rps = if 1 < steps {
+                (final_rps - config.measure.start_rps) / (steps - 1)
+            } else {
+                0
+            };
             let mut count = 0;
 
-            tracing::info!("measure for {:?}", step_time * steps);
+            println!("measure for {:?}", step_time * steps);
 
             for step in 1..=steps {
                 let interval = Duration::from_secs_f32(1.0 / current_rps as f32);
                 let mut ticker = tokio::time::interval(interval);
                 let stop = tokio::time::Instant::now() + step_time;
 
-                tracing::info!(
+                println!(
                     "step {step}: current_rps: {current_rps}, interval: {:?}",
                     interval
                 );
@@ -301,21 +305,22 @@ impl GlobalSched {
         while let Some(command) = self.command_receiver.recv().await {
             match command {
                 Command::Contracted { job } => {
-                    let mut local_sched = self.local_sched_manager.shortest();
-
-                    while local_sched.is_overloaded() {
+                    // self.local_sched_manager.view();
+                    // let mut has_wait = false;
+                    let local_sched = loop {
+                        if let Some(sched) = self.local_sched_manager.no_jobs() {
+                            break sched;
+                        }
+                        // if !has_wait {
+                        //     has_wait = true;
+                        //     tracing::warn!("all LocalScheds are busy");
+                        // }
                         tokio::time::sleep(Duration::from_millis(10)).await;
-                        local_sched = self.local_sched_manager.shortest();
-                    }
+                    };
 
                     local_sched.assign(job).await;
                     tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
                 }
-                // Command::NoJob => self.sub_contracting(default_job_deadline),
-                // Command::LocalAction => {
-                //     self.contract_up_to_deadline(default_job_deadline, &default_worker_id)
-                //         .await
-                // }
                 Command::ShutdownReq => {
                     self.schedule_shutdown().await;
                     job_generator.abort();
@@ -375,12 +380,19 @@ impl GlobalSched {
                     // // local_sched.assign(job).await;
                     // tracing::debug!("assigned job to LocalSched: {}", local_sched.id);
                     // self.sub_contracting(default_job_deadline);
+                    // self.local_sched_manager.view();
                     let mut local_sched = self.local_sched_manager.shortest();
 
+                    // let mut has_wait = false;
                     while local_sched.is_overloaded() {
+                        // has_wait = true;
                         tokio::time::sleep(Duration::from_millis(10)).await;
                         local_sched = self.local_sched_manager.shortest();
                     }
+
+                    // if has_wait {
+                    //     tracing::warn!("all LocalScheds are busy");
+                    // }
 
                     local_sched.assign(job).await;
                     tracing::debug!("assigned job to LocalSched: {}", local_sched.id);

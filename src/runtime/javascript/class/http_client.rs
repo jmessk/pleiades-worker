@@ -77,6 +77,7 @@ impl HttpClient {
 
             match response {
                 Some(RuntimeResponse::Http(http::Response::Get(Some(body)))) => {
+                    // println!("response body size: {:?}", body.len());
                     tracing::trace!("response found: size: {:?} Bytes", body.len());
                     // let array = JsUint8Array::from_iter(body, context)?;
                     // JsValue::from(array)
@@ -88,6 +89,7 @@ impl HttpClient {
                         .call(&JsValue::undefined(), &[ret], context)
                 }
                 _ => {
+                    println!("http error");
                     tracing::trace!("error");
                     resolver.reject.call(
                         &JsValue::undefined(),

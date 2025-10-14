@@ -24,7 +24,7 @@ pub struct PendingManager {
     data_manager_controller: data_manager::Controller,
     // /// http_client
     // ///
-    // http_client: reqwest::Client,
+    http_client: reqwest::Client,
 }
 
 impl PendingManager {
@@ -42,7 +42,7 @@ impl PendingManager {
             semaphore: Arc::new(Semaphore::new(1024)),
             // scheduler_controller: None,
             data_manager_controller,
-            // http_client: reqwest::Client::new(),
+            http_client: reqwest::Client::new(),
         };
 
         let controller = Controller { command_sender };
@@ -290,10 +290,10 @@ impl PendingManager {
                         RuntimeRequest::Http(http::Request::Get(url)) => {
                             job.status = JobStatus::Resolving;
 
-                            // let client = self.http_client.clone();
+                            let client = self.http_client.clone();
 
                             tokio::spawn(async move {
-                                Self::task_http_get(&mut job, url.clone()).await;
+                                Self::task_http_get(client, &mut job, url.clone()).await;
 
                                 request
                                     .response_sender
@@ -308,10 +308,10 @@ impl PendingManager {
                         RuntimeRequest::Http(http::Request::Post { url, body }) => {
                             job.status = JobStatus::Resolving;
 
-                            // let client = self.http_client.clone();
+                            let client = self.http_client.clone();
 
                             tokio::spawn(async move {
-                                Self::task_http_post(&mut job, url.clone(), body).await;
+                                Self::task_http_post(client, &mut job, url.clone(), body).await;
                                 request
                                     .response_sender
                                     .send(register::Response { job })
@@ -373,11 +373,12 @@ impl PendingManager {
     ///
     async fn task_http_get(
         // scheduler_controller: scheduler::Controller,
-        // client: reqwest::Client,
+        client: reqwest::Client,
         job: &mut Job,
         url: String,
     ) {
-        let response = reqwest::get(url).await.ok();
+        // let response = reqwest::get(url).await.ok();
+        let response = client.get(url).send().await.ok();
 
         match response {
             Some(response) => {
@@ -399,18 +400,18 @@ impl PendingManager {
     ///
     async fn task_http_post(
         // scheduler_controller: scheduler::Controller,
-        // client: reqwest::Client,
+        client: reqwest::Client,
         job: &mut Job,
         url: String,
         body: Bytes,
     ) {
-        // let response = client.post(url).body(body).send().await.ok();
-        let response = reqwest::Client::new()
-            .post(url)
-            .body(body)
-            .send()
-            .await
-            .ok();
+        let response = client.post(url).body(body).send().await.ok();
+        // let response = reqwest::Client::new()
+        //     .post(url)
+        //     .body(body)
+        //     .send()
+        //     .await
+        //     .ok();
 
         match response {
             Some(response) => {

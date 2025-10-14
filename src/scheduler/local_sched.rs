@@ -63,7 +63,7 @@ impl LocalSched {
     ) -> (Self, Controller) {
         let channel_cap = match config.policy.as_str() {
             "blocking" => 1,
-            "cooperative" => 256,
+            "cooperative" => 64,
             _ => unreachable!(),
         };
         let (command_sender, command_receiver) = mpsc::channel(channel_cap);

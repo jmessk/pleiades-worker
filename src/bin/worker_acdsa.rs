@@ -74,6 +74,7 @@ fn main() {
     let num_executors = config.num_executors;
     let num_executor_cores = config.num_executor_cores;
     let num_tokio_workers = config.num_general_cores;
+    let hyperthreads_executor = config.hyperthreads_executor;
 
     // println!("num_host_cores: {num_host_cores}");
     println!("num_all_cores: {num_all_cores}");
@@ -109,13 +110,18 @@ fn main() {
                     //     let core_list = (0..num_executor_cores).collect::<Vec<usize>>();
 
                     if count < num_tokio_workers {
-                        let last = num_executor_cores + num_tokio_workers;
-                        let core_list = (num_executor_cores..last).collect::<Vec<usize>>();
-
-                        affinity::set_thread_affinity(&core_list).unwrap();
+                        // let last = num_executor_cores + num_tokio_workers;
+                        // let core_list = (num_executor_cores..last).collect::<Vec<usize>>();
+                        let core_list = [8, 9, 20, 21];
+                        affinity::set_thread_affinity(core_list).unwrap();
                         println!("tokio worker is set to core {core_list:?}");
                     } else {
                         let core_list = (0..num_executor_cores).collect::<Vec<usize>>();
+                        // let core_list = if hyperthreads_executor {
+                        //     (0..num_executor_cores).collect::<Vec<usize>>()
+                        // } else {
+                        //     (0..num_executor_cores).step_by(2).collect::<Vec<usize>>()
+                        // };
 
                         affinity::set_thread_affinity(&core_list).unwrap();
                         println!("executor is set to core {core_list:?}");
@@ -143,13 +149,18 @@ fn main() {
                     // }
 
                     if count < num_tokio_workers {
-                        let last = num_executor_cores + num_tokio_workers;
-                        let core_list = (num_executor_cores..last).collect::<Vec<usize>>();
-
-                        affinity::set_thread_affinity(&core_list).unwrap();
+                        // let last = num_executor_cores + num_tokio_workers;
+                        // let core_list = (num_executor_cores..last).collect::<Vec<usize>>();
+                        let core_list = [8, 9, 20, 21];
+                        affinity::set_thread_affinity(core_list).unwrap();
                         println!("tokio worker is set to core {core_list:?}");
                     } else {
                         let core_id = (count - num_tokio_workers) % num_executor_cores;
+                        // let core_id = if hyperthreads_executor {
+                        //     (count - num_tokio_workers) % num_executor_cores
+                        // } else {
+                        //     ((count - num_tokio_workers) * 2) % num_executor_cores
+                        // };
                         core_affinity::set_for_current(core_affinity::CoreId { id: core_id });
                         println!("executor is set to core {core_id:?}");
                     }
@@ -232,6 +243,7 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
             updater_controller.clone(),
             pending_manager_controller.clone(),
             // notify_sender.clone(),
+            config.clone(),
         );
 
         local_sched_manager_builder.insert(local_sched_controller);
@@ -240,13 +252,8 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
             executor.run();
         });
 
-        let policy = match config.policy.as_str() {
-            "cooperative" => local_sched::Policy::Cooperative,
-            "blocking" => local_sched::Policy::Blocking,
-            _ => panic!("invalid policy"),
-        };
         join_set.spawn(async move {
-            local_sched.run(policy).await;
+            local_sched.run().await;
         });
     });
 
@@ -272,18 +279,17 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
 
     // Initialize GlobalSched
     //
-    let policy = match config.policy.as_str() {
-        "cooperative" => local_sched::Policy::Cooperative,
-        // "blocking" => local_sched::Policy::Blocking,
-        _ => panic!("invalid policy"),
-    };
-
+    // let policy = match config.policy.as_str() {
+    //     "cooperative" => local_sched::Policy::Cooperative,
+    //     // "blocking" => local_sched::Policy::Blocking,
+    //     _ => panic!("invalid policy"),
+    // };
     let (mut global_sched, global_sched_controller) = GlobalSched::new(
         // contractor_controller,
         local_sched_manager,
         // worker_id_manager,
         // notify_receiver,
-        policy,
+        // policy,
         code,
         config.clone(),
     );
@@ -312,10 +318,11 @@ async fn worker(_args: Arg, config: WorkerConfig) -> JoinSet<()> {
 
     let cpu_usage = tokio::spawn(save_system_metrics(
         dir.clone(),
-        config.num_executor_cores,
+        // config.num_executor_cores,
         start_notify_receiver,
         stop_notify_receiver,
-        config.sys_metrics_freq,
+        // config.sys_metrics_freq,
+        config.clone(),
     ));
 
     let summary = save_request_metrics(
@@ -493,6 +500,10 @@ async fn save_request_metrics(
             consumed_cpu,
         } = metric;
 
+        if start < start_measurement {
+            continue;
+        }
+
         if status == "Finished" {
             finished += 1;
         } else if status == "Canceled" {
@@ -562,7 +573,7 @@ async fn save_request_metrics(
             .unwrap();
 
         count += 1;
-        if 100 <= count {
+        if 1000 <= count {
             count = 0;
             request_metrics.flush().unwrap();
             rps_metrics.flush().unwrap();
@@ -595,10 +606,11 @@ async fn save_request_metrics(
 
 async fn save_system_metrics(
     dir: PathBuf,
-    num_use_cpus: usize,
+    // num_use_cpus: usize,
     mut start_notifier: tokio::sync::watch::Receiver<()>,
     mut stop_notifier: tokio::sync::watch::Receiver<()>,
-    freq: Duration,
+    // freq: Duration,
+    config: WorkerConfig,
 ) {
     let file_name = dir.join("system_metrics.csv");
     let file = File::create(&file_name).unwrap();
@@ -616,7 +628,7 @@ async fn save_system_metrics(
     let processes_to_update = sysinfo::ProcessesToUpdate::Some(&pids);
 
     start_notifier.changed().await.unwrap();
-    let mut ticker = tokio::time::interval(freq);
+    let mut ticker = tokio::time::interval(config.sys_metrics_freq);
 
     while {
         tokio::select! {
@@ -630,11 +642,29 @@ async fn save_system_metrics(
         system.refresh_cpu_usage();
         let cpu_list = system.cpus();
 
-        let cpu_usage = cpu_list[0..num_use_cpus]
+        let cpu_usage = cpu_list[0..config.num_executor_cores]
             .iter()
             .map(|cpu| cpu.cpu_usage())
             .sum::<f32>()
-            / num_use_cpus as f32;
+            / config.num_executor_cores as f32;
+
+        // let cpu_usage = if config.hyperthreads_executor {
+        //     cpu_list
+        //         .iter()
+        //         .take(config.num_executor_cores)
+        //         .map(|cpu| cpu.cpu_usage())
+        //         .sum::<f32>()
+        //         / config.num_executor_cores as f32
+        // } else {
+        //     // ハイパースレッディングが無効な場合、偶数番目のCPUの使用率のみを平均を取る
+        //     cpu_list
+        //         .iter()
+        //         .take(config.num_executor_cores)
+        //         .step_by(2)
+        //         .map(|cpu| cpu.cpu_usage())
+        //         .sum::<f32>()
+        //         / (config.num_executor_cores / 2) as f32
+        // };
 
         // writer
         //     .write_all(format!(",{cpu_usage}").as_bytes())
@@ -663,7 +693,7 @@ async fn save_system_metrics(
         // finalize
         /////////////////////////////////////////////////////////////////
 
-        let timestamp = counter * freq.as_secs();
+        let timestamp = counter * config.sys_metrics_freq.as_secs();
         writer
             .write_all(format!("{timestamp},{cpu_usage}\n", cpu_usage = cpu_usage as u8).as_bytes())
             .unwrap();

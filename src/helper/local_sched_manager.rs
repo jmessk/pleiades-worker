@@ -71,6 +71,13 @@ impl LocalSchedManager {
         &mut item.local_sched
     }
 
+    pub fn no_jobs(&mut self) -> Option<&mut local_sched::Controller> {
+        self.list
+            .iter_mut()
+            .find(|item| item.local_sched.num_jobs() == 0)
+            .map(|item| &mut item.local_sched)
+    }
+
     // pub fn shortest_pending(&mut self) -> &mut local_sched::Controller {
     //     let item = self
     //         .list

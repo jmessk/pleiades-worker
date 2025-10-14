@@ -7,6 +7,7 @@ pub struct WorkerConfig {
     pub num_executors: usize,
     pub num_executor_cores: usize,
     pub num_general_cores: usize,
+    pub hyperthreads_executor: bool,
 
     pub affinity_mode: String,
     pub policy: String,
