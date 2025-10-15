@@ -10,13 +10,13 @@ policy: cooperative
 sys_metrics_freq: 1s
 
 warmup:
-  rps: 5000
-  time: 5s
+  rps: 1
+  time: 1s
 
 measure:
-  start_rps: 10000
-  final_rps: 20000
-  steps: 5
+  start_rps: 2
+  final_rps: 2
+  steps: 1
   step_time: 5s
 
 script_path: ./scripts/test-1.js
