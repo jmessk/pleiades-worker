@@ -77,20 +77,26 @@ impl Updater {
             let data_manager_controller = self.data_manager_controller.clone();
             let metric_sender = self.metric_sender.clone();
             let enable_metrics = self.enable_metrics;
-            let permit = self.semaphore.clone().acquire_owned().await.unwrap();
+            // let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
             // new task
             match command {
                 Command::Update(request) => {
-                    tokio::spawn(async move {
-                        let metric =
-                            Self::task_update_job_metrics(client, data_manager_controller, request)
-                                .await;
-                        if enable_metrics {
-                            metric_sender.send(metric).await.unwrap_or(());
-                        }
-                        drop(permit);
-                    });
+                    // tokio::spawn(async move {
+                    //     let metric =
+                    //         Self::task_update_job_metrics(client, data_manager_controller, request)
+                    //             .await;
+                    //     if enable_metrics {
+                    //         metric_sender.send(metric).await.unwrap_or(());
+                    //     }
+                    //     drop(permit);
+                    // });
+                    let metric =
+                        Self::task_update_job_metrics(client, data_manager_controller, request)
+                            .await;
+                    if enable_metrics {
+                        metric_sender.send(metric).await.unwrap_or(());
+                    }
                 }
             }
         }

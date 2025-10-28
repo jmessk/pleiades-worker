@@ -20,7 +20,7 @@ pub struct WorkerConfig {
     pub warmup: ConfigWarmup,
     pub measure: ConfigMeasure,
 
-    pub script_path: PathBuf,
+    // pub script_path: PathBuf,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

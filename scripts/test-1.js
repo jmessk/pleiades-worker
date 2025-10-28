@@ -2,7 +2,7 @@ export default async function fetch(input) {
 
     // const client = new HttpClient();
     // const response1 = await client.get("http://localhost/");
-    let iter = 20000;
+    let iter = 200;
     let state = 123456789;
 
     for (let i = 0; i < iter; i++) {

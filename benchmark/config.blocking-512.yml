@@ -1,22 +1,18 @@
 hyperthreads_executor: false
-num_executors: 8
+num_executors: 512
 num_executor_cores: 8
 num_general_cores: 4
 
 affinity_mode: unfixed
-# policy: blocking
-policy: cooperative
-# policy: cooperative-old
+policy: blocking
 sys_metrics_freq: 1s
 
 warmup:
   rps: 5000
-  time: 5s
+  time: 10s
 
 measure:
   start_rps: 8000
   final_rps: 13000
   steps: 5
   step_time: 5s
-
-script_path: ./scripts/test-1.js

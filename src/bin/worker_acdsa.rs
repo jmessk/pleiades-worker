@@ -29,6 +29,8 @@ struct Arg {
     config_path: Option<String>,
     // #[clap(long = "num_iteration", short = 'n')]
     // num_iteration: Option<usize>,
+    #[clap(long = "script")]
+    script_path: Option<String>,
 }
 
 // #[tokio::main(flavor = "multi_thread")]
@@ -46,6 +48,11 @@ fn main() {
     let config = match args.config_path {
         Some(ref path) => WorkerConfig::from_path(path),
         None => unreachable!("config file is required"),
+    };
+
+    let script = match args.script_path {
+        Some(ref path) => std::fs::read_to_string(path).unwrap(),
+        None => unreachable!("script path is required"),
     };
 
     println!("config: {config:#?}");
@@ -140,21 +147,29 @@ fn main() {
     let runtime = runtime_builder.enable_all().build().unwrap();
 
     runtime.block_on(async move {
-        worker(args, config, tids_clone).await.join_all().await;
+        worker(args, config, tids_clone, script)
+            .await
+            .join_all()
+            .await;
         // tokio::time::sleep(Duration::from_secs(10)).await;
     });
     // worker(config).await;
 }
 
-async fn worker(_args: Arg, config: WorkerConfig, tids: Arc<Mutex<Vec<i32>>>) -> JoinSet<()> {
+async fn worker(
+    _args: Arg,
+    config: WorkerConfig,
+    tids: Arc<Mutex<Vec<i32>>>,
+    script: String,
+) -> JoinSet<()> {
     // let pleiades_url = std::env::var("PLEIADES_URL").unwrap();
     let client = Arc::new(pleiades_api::Client::try_new("http://example.com/").unwrap());
     // println!("{:?}", client.ping().await.unwrap());
 
     // Read script
     //
-    let data = std::fs::read(&config.script_path).unwrap();
-    let code = bytes::Bytes::from(data);
+    // let data = std::fs::read(&config.script_path).unwrap();
+    // let code = bytes::Bytes::from(data);
     //
     // ///////
 
@@ -232,7 +247,7 @@ async fn worker(_args: Arg, config: WorkerConfig, tids: Arc<Mutex<Vec<i32>>>) ->
         // worker_id_manager,
         // notify_receiver,
         // policy,
-        code,
+        bytes::Bytes::from(script.clone()),
         config.clone(),
     );
 
@@ -272,7 +287,7 @@ async fn worker(_args: Arg, config: WorkerConfig, tids: Arc<Mutex<Vec<i32>>>) ->
     .await;
 
     cpu_usage.await.unwrap();
-    save_summary(dir.clone(), config, summary).await;
+    save_summary(dir.clone(), config, summary, script).await;
 
     println!("metrics are saved to {}", dir.to_str().unwrap());
     //
@@ -285,7 +300,9 @@ async fn save_summary(
     dir: PathBuf,
     config: WorkerConfig,
     (elapsed, finished, cancelled, max_rps): (Duration, u64, u64, u32),
+    script: String,
 ) {
+    // summary.yml
     let file = File::create(dir.join("summary.yml")).unwrap();
     let mut writer = BufWriter::new(file);
 
@@ -309,6 +326,12 @@ max_rps: {max_rps}
         )
         .unwrap();
 
+    writer.flush().unwrap();
+
+    // script
+    let file = File::create(dir.join("script.js")).unwrap();
+    let mut writer = BufWriter::new(file);
+    writer.write_all(script.as_bytes()).unwrap();
     writer.flush().unwrap();
 }
 
