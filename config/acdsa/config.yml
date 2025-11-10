@@ -1,12 +1,11 @@
 hyperthreads_executor: false
-num_executors: 8
+num_executors: 1024
 num_executor_cores: 8
 num_general_cores: 4
 
 affinity_mode: unfixed
-# policy: blocking
-policy: cooperative
-# policy: cooperative-old
+policy: blocking
+# policy: cooperative
 sys_metrics_freq: 1s
 
 warmup:

@@ -1,4 +1,3 @@
-use core::num;
 use std::time::{Duration, Instant};
 
 // use std::sync::Arc;
@@ -49,7 +48,7 @@ impl GlobalSched {
         code: bytes::Bytes,
         config: WorkerConfig,
     ) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(128);
+        let (command_sender, command_receiver) = mpsc::channel(4096);
 
         let controller = Controller { command_sender };
 
@@ -288,11 +287,15 @@ impl GlobalSched {
                 );
 
                 ticker.tick().await;
+
                 while tokio::select! {
                     _ = ticker.tick() => true,
                     _ = tokio::time::sleep_until(stop) => false,
                 } {
-                    let job = gen_job(count.to_string(), code.clone()).await;
+                    let id = count.to_string();
+                    let code = code.clone();
+                    let job = gen_job(id, code).await;
+
                     controller.enqueue_job(job).await;
 
                     count += 1;

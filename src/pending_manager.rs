@@ -34,12 +34,12 @@ impl PendingManager {
     ///
     ///
     pub fn new(data_manager_controller: data_manager::Controller) -> (Self, Controller) {
-        let (command_sender, command_receiver) = mpsc::channel(1024);
+        let (command_sender, command_receiver) = mpsc::channel(4096);
 
         let data_manager = Self {
             command_receiver,
-            max_concurrency: 1024,
-            semaphore: Arc::new(Semaphore::new(1024)),
+            max_concurrency: 4096,
+            semaphore: Arc::new(Semaphore::new(4096)),
             // scheduler_controller: None,
             data_manager_controller,
             http_client: reqwest::Client::new(),
