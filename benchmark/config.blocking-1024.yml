@@ -9,10 +9,10 @@ sys_metrics_freq: 1s
 
 warmup:
   rps: 5000
-  time: 10s
+  time: 5s
 
 measure:
-  start_rps: 8000
-  final_rps: 13000
+  start_rps: 22000
+  final_rps: 32000
   steps: 5
   step_time: 5s

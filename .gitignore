@@ -1,5 +1,5 @@
 /target
-/metrics
+/metrics*
 /assets/*
 /cpu_usage
 /results-b
